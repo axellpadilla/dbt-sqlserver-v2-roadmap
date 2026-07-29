@@ -31,6 +31,14 @@ this tracks the parallel v2 work.
   `dbt-labs/dbt-core:main`. Rationale: roadmap repo's `plan/README.md`
   ("Branching strategy").
 
+## Related: aligning v1 with the future v2 parser, on this repo
+
+- [ ] #770 — Explore dbt Core 1.12 v2 parser support: validates the existing
+  Python `dbt-sqlserver` adapter against dbt Core 1.12's opt-in
+  `--use-v2-parser` (Rust parser, existing Python adapter — not the Fusion
+  adapter framework this issue tracks). Surfaces project/macro/manifest
+  compatibility issues early, ahead of the full Fusion port below.
+
 ## dbt-core (v2 adapter implementation)
 
 - [x] [dbt-labs/dbt-core#15714](https://github.com/dbt-labs/dbt-core/issues/15714) — bootstrap/scope-alignment issue
