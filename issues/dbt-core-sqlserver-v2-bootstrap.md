@@ -77,20 +77,25 @@ and this repo's CI stay broken workspace-wide until every arm lands.
   `dbt-sqlserver-next/dbt-core:sqlserver-v2-port`.
 
 Execution follows the same crate-by-crate structure as the ClickHouse
-Fusion rollout (#14607 and its series), as a sequence of scoped "Part N"
-sub-issues once this is triaged, each closed by the PR(s) that implement it:
+Fusion rollout (#14607 and its series): scoped "Part N" sub-issues, each
+closed by the PR(s) that implement it, opened one at a time as work on
+each actually starts (draft of the full series:
+roadmap `issues/dbt-core-sqlserver-v2-parts.md`, not yet opened as issues).
 
-1. `crates/dbt-adapter-core` — register `AdapterType::SqlServer` + `quote_char`.
-2. `crates/dbt-schemas` — `SqlServerDbConfig` + `DbConfig::SqlServer`.
-3. `crates/dbt-auth` — extend `sqlserver/` module: plain SQL auth, TLS/
-   `encrypt` params (porting from v1's just-merged experimental ADBC
+1. Part 1 — `crates/dbt-adapter-core`: register `AdapterType::SqlServer` + `quote_char`.
+2. Part 2 — `crates/dbt-schemas`: `SqlServerDbConfig` + `DbConfig::SqlServer`.
+3. Part 3 — `crates/dbt-auth`: extend `sqlserver/` module — plain SQL auth,
+   TLS/`encrypt` params (porting from v1's just-merged experimental ADBC
    backend, which talks to the same driver), `SET QUOTED_IDENTIFIER ON`
    init SQL.
-4. `crates/dbt-adapter` — relation quoting, catalog introspection, column
-   builder, SQL type mapping, adapter behavior match arms (mirroring
-   `Fabric` where applicable).
-5. `crates/dbt-loader` — `dbt_macro_assets/dbt-sqlserver/` macro package,
-   ported from the v1 Jinja macros.
+4. Parts 4–7 — `crates/dbt-adapter`: relation quoting & factory, catalog
+   introspection, SQL type mapping & column builder, adapter behavior match
+   arms (mirroring `Fabric` where applicable) — independent of each other,
+   run in any order once Part 1 lands.
+5. Part 8 — `crates/dbt-loader`: `dbt_macro_assets/dbt-sqlserver/` macro
+   package, ported from the v1 Jinja macros.
+6. Part 9 (optional) — `crates/dbt-init`: interactive profile wizard.
+7. Part 10 — end-to-end validation: jaffle-shop smoke test, changelog, CI coordination.
 
 Each step: `cargo build -p <crate>` / `cargo test -p <crate>`. End-to-end:
 a real `dbt build` against a local SQL Server container and
