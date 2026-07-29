@@ -1,0 +1,8 @@
+# Nested independent git checkouts — tracked in their own repos/remotes,
+# not as submodules. See plan/README.md for why.
+/dbt-core/
+/dbt-sqlserver/
+
+# OS / editor cruft
+.DS_Store
+*.swp
