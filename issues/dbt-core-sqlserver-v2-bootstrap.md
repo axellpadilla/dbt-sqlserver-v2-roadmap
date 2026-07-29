@@ -78,9 +78,13 @@ and this repo's CI stay broken workspace-wide until every arm lands.
 
 Execution follows the same crate-by-crate structure as the ClickHouse
 Fusion rollout (#14607 and its series): scoped "Part N" sub-issues, each
-closed by the PR(s) that implement it, opened one at a time as work on
-each actually starts (draft of the full series:
-roadmap `issues/dbt-core-sqlserver-v2-parts.md`, not yet opened as issues).
+closed by the PR that implements it. Filed on the fork
+(`dbt-sqlserver-next/dbt-core`), not here — `Closes #N` only auto-links
+within a repo, and the PRs land on `sqlserver-v2-port`, not `main` (see
+Contributing above), so an issue here could never actually close. Full
+series: https://github.com/dbt-sqlserver-next/dbt-core/issues/1 through
+[`/10`](https://github.com/dbt-sqlserver-next/dbt-core/issues/10)
+([index](https://github.com/dbt-sqlserver-next/dbt-sqlserver-v2-roadmap/blob/main/issues/dbt-core-sqlserver-v2-parts.md)).
 
 1. Part 1 — `crates/dbt-adapter-core`: register `AdapterType::SqlServer` + `quote_char`.
 2. Part 2 — `crates/dbt-schemas`: `SqlServerDbConfig` + `DbConfig::SqlServer`.
@@ -95,7 +99,9 @@ roadmap `issues/dbt-core-sqlserver-v2-parts.md`, not yet opened as issues).
 5. Part 8 — `crates/dbt-loader`: `dbt_macro_assets/dbt-sqlserver/` macro
    package, ported from the v1 Jinja macros.
 6. Part 9 (optional) — `crates/dbt-init`: interactive profile wizard.
-7. Part 10 — end-to-end validation: jaffle-shop smoke test, changelog, CI coordination.
+7. Part 10 — end-to-end validation: jaffle-shop smoke test, changelog, CI
+   coordination. Closing it triggers the actual PR(s) against
+   `dbt-labs/dbt-core:main`, closing this issue.
 
 Each step: `cargo build -p <crate>` / `cargo test -p <crate>`. End-to-end:
 a real `dbt build` against a local SQL Server container and

@@ -23,7 +23,12 @@ guide has v2 adapters living inside the `dbt-core` monorepo. v1
 (`dbt-sqlserver`) keeps existing as an independently maintained package;
 this tracks the parallel v2 work.
 
-## Want to help? Where PRs go
+## Want to help?
+
+- Align v1 closer to the final v2 state (e.g. #785, #770)
+- Check for bugs or issues on work in progress
+
+### Where PRs go
 
 - **Fork**: https://github.com/dbt-sqlserver-next/dbt-core
 - **Branch**: `sqlserver-v2-port`
@@ -41,15 +46,15 @@ this tracks the parallel v2 work.
 
 ## dbt-core (v2 adapter implementation)
 
-- [x] [dbt-labs/dbt-core#15714](https://github.com/dbt-labs/dbt-core/issues/15714) — bootstrap/scope-alignment issue
-- [ ] `crates/dbt-adapter-core` — register `AdapterType::SqlServer` + `quote_char`
-- [ ] `crates/dbt-schemas` — `SqlServerDbConfig` + `DbConfig::SqlServer`
-- [ ] `crates/dbt-auth` — plain SQL auth, TLS/`encrypt` params, `SET QUOTED_IDENTIFIER ON` init SQL
-- [ ] `crates/dbt-adapter` — relation quoting, catalog introspection, column builder, SQL type mapping, adapter behavior arms
-- [ ] `crates/dbt-loader` — `dbt_macro_assets/dbt-sqlserver/` macro package
-- [ ] Smoke test: clean `dbt build` against [jaffle-shop](https://github.com/dbt-labs/jaffle-shop) + a local SQL Server container
+- [x] [dbt-labs/dbt-core#15714](https://github.com/dbt-labs/dbt-core/issues/15714) — bootstrap/scope-alignment issue (upstream, public)
 
-Full checklist: roadmap repo's `plan/02-implementation-steps.md`.
+Granular execution ("Part N" issues, one per crate-scoped unit of work) is
+tracked on the fork, not here — same reasoning as "Where PRs go" above
+(`Closes #N` only works same-repo, and these aren't mergeable upstream yet):
+[dbt-sqlserver-next/dbt-core#1](https://github.com/dbt-sqlserver-next/dbt-core/issues/1)
+through
+[`#10`](https://github.com/dbt-sqlserver-next/dbt-core/issues/10)
+([index](https://github.com/dbt-sqlserver-next/dbt-sqlserver-v2-roadmap/blob/main/issues/dbt-core-sqlserver-v2-parts.md)).
 
 ## dbt-sqlserver (v1 fixes found while planning the v2 port)
 
