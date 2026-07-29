@@ -33,8 +33,7 @@ this tracks the parallel v2 work.
 
 ## dbt-core (v2 adapter implementation)
 
-- [ ] Bootstrap/scope-alignment issue on `dbt-labs/dbt-core` — not yet
-  opened, draft at roadmap repo's `issues/dbt-core-sqlserver-v2-bootstrap.md`
+- [x] [dbt-labs/dbt-core#15714](https://github.com/dbt-labs/dbt-core/issues/15714) — bootstrap/scope-alignment issue
 - [ ] `crates/dbt-adapter-core` — register `AdapterType::SqlServer` + `quote_char`
 - [ ] `crates/dbt-schemas` — `SqlServerDbConfig` + `DbConfig::SqlServer`
 - [ ] `crates/dbt-auth` — plain SQL auth, TLS/`encrypt` params, `SET QUOTED_IDENTIFIER ON` init SQL

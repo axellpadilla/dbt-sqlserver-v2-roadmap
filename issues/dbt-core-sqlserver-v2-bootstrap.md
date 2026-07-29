@@ -1,7 +1,8 @@
 ---
 target_repo: dbt-labs/dbt-core
 type: feature
-status: draft
+status: open
+url: https://github.com/dbt-labs/dbt-core/issues/15714
 labels: [type:feature, area:adapters, engine:v2]
 related: ../plan/README.md
 ---
