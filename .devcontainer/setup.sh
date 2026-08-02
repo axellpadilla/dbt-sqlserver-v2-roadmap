@@ -33,26 +33,32 @@ persist_env() {
 sudo apt-get update
 
 # --- v2 (dbt-core, Rust) -----------------------------------------------------
-# z3 and pkg-config are the two that bite: without them cargo build fails part
-# way through with a linker error that doesn't name them (plan/01).
+# pkg-config and z3 are what the adapter guide's setup step names for the Z3
+# link errors; its `brew install pkg-config z3` maps to libz3-dev on Debian,
+# where the headers are a separate package. cmake isn't named by the guide —
+# it's here because -sys crates commonly shell out to it, and finding out
+# mid-build costs more than the download.
 log "Build dependencies for dbt-core"
 apt_install build-essential pkg-config z3 libz3-dev cmake
+
+# rustup, rather than the devcontainer Rust feature: that feature adds its
+# components outside the branch that installs rustup (install.sh:362 vs :400),
+# so a skipped install fails the image build. Installing here also keeps
+# CARGO_HOME under $HOME, which the remote user owns.
+cargo_bin="$HOME/.cargo/bin"
+if [ ! -x "$cargo_bin/rustup" ]; then
+  log "Installing rustup"
+  curl -sSf --proto '=https' --tlsv1.2 https://sh.rustup.rs \
+    | sh -s -- -y --no-modify-path --profile minimal
+fi
+export PATH="$cargo_bin:$PATH"
+persist_env 'export PATH="$HOME/.cargo/bin:$PATH"'
 
 # Nextest is dbt-core's testing utility of choice (its CONTRIBUTING.md).
 if ! command -v cargo-nextest >/dev/null 2>&1; then
   log "Installing cargo-nextest"
-  cargo_bin="${CARGO_HOME:-$HOME/.cargo}/bin"
-  # The rust feature puts CARGO_HOME under /usr/local, which may not be
-  # writable by the remote user; fall back to sudo rather than failing.
-  if [ -w "$cargo_bin" ]; then
-    curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C "$cargo_bin"
-  else
-    curl -LsSf https://get.nexte.st/latest/linux | sudo tar zxf - -C "$cargo_bin"
-  fi
+  curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C "$cargo_bin"
 fi
-
-# rust-toolchain.toml in dbt-core pins the channel; rustup honors it on first
-# use inside the directory, so there's no toolchain to pick here.
 
 # --- v1 (dbt-sqlserver, Python + ODBC) ---------------------------------------
 log "Microsoft ODBC driver and SQL Server tools"
@@ -109,8 +115,10 @@ log "Setting up dbt-sqlserver (v1)"
 persist_env "export ADBC_DRIVER_PATH=\"$PWD/dbt-sqlserver/.venv/etc/adbc/drivers\""
 
 log "dbt-core"
-echo "Branch:    $(git -C dbt-core rev-parse --abbrev-ref HEAD)"
-echo "Toolchain: $(cd dbt-core && rustc --version 2>/dev/null || echo 'resolves on first cargo run')"
+echo "Branch: $(git -C dbt-core rev-parse --abbrev-ref HEAD)"
+# rust-toolchain.toml pins the channel and lists the components; `rustup show`
+# installs both, so the first cargo build isn't also a toolchain download.
+( cd dbt-core && rustup show )
 echo "The first cargo build is slow and writes several GB to dbt-core/target/,"
 echo "in the bind-mounted workspace, so it survives container rebuilds."
 

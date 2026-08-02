@@ -2,19 +2,28 @@
   "name": "dbt-sqlserver v1 + v2 (Fusion)",
   "image": "mcr.microsoft.com/devcontainers/base:bookworm",
 
+  // No Rust feature here: setup.sh installs rustup instead. The feature runs
+  // `rustup component add` outside the branch that installs rustup
+  // (install.sh:362 vs :400), so whenever it decides to skip the install it
+  // fails the whole image build — and a build-time failure leaves you with no
+  // container at all. dbt-core pins its channel in rust-toolchain.toml, which
+  // rustup honors, so there's nothing for a feature to decide anyway.
   "features": {
-    "ghcr.io/devcontainers/features/rust:1": {
-      "version": "none",
-      "profile": "default"
-    },
+    // 3.11 is dbt-sqlserver's own baseline: its devcontainer image is
+    // python:3.11-bookworm and 3.11 is the pinned version in the integration
+    // matrix. It supports 3.10-3.14, so this is a floor, not a ceiling.
+    // installTools skips flake8/black/mypy etc. — the repo brings its own via
+    // `uv sync --group dev`.
     "ghcr.io/devcontainers/features/python:1": {
       "version": "3.11",
       "installTools": false
     },
+    // The adapter guide's setup step lists Go alongside Rust, for driver builds.
     "ghcr.io/devcontainers/features/go:1": {
       "version": "latest"
     },
-    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+    // Docker CE rather than Moby, matching dbt-sqlserver's devcontainer.
+    "ghcr.io/devcontainers/features/docker-in-docker:4": {
       "moby": false
     }
   },
@@ -32,7 +41,8 @@
     "DBT_TEST_USER_2": "DBT_TEST_USER_2",
     "DBT_TEST_USER_3": "DBT_TEST_USER_3",
     "RUST_BACKTRACE": "1",
-    "CARGO_TERM_COLOR": "always"
+    "CARGO_TERM_COLOR": "always",
+    "PATH": "/home/vscode/.cargo/bin:${containerEnv:PATH}"
   },
 
   "postCreateCommand": "bash .devcontainer/setup.sh",
