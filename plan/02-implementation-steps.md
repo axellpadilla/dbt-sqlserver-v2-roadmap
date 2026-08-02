@@ -232,31 +232,47 @@ compile error once 5.1 lands. The compiler enumerates `adapter_impl.rs`,
 shows up as wrong SQL rather than a build failure. Work the list rather than
 `cargo build` output.
 
-- `[ ]` Add `SqlServer` to `get_database`, joining the existing
+- `[x]` `SqlServer` in `get_database`, joining the existing
   `Databricks | Fabric | Postgres | Redshift | Salesforce | Bigquery` group.
   That group raises `InvalidConfig` when `database` is unset; the `_` arm
   returns an empty string, so without the arm a relation missing a database
   renders as `.schema.table` instead of erroring.
-- `[ ]` Leave `include_policy` alone — its `_ => Policy::trues()`
+- `[x]` `include_policy` left alone — its `_ => Policy::trues()`
   is already correct for SQL Server's 3-part naming, and the explicit arms
   there are all for adapters that drop a path part.
-- `[ ]` Check whether the shared rendering path **escapes an embedded delimiter**
-  (`ab"cd` → `"ab""cd"`). If it interpolates verbatim, a SQL Server name
-  containing a `"` breaks or injects, and v2 would reject names v1 accepts —
-  v1 fixed exactly this in `SQLServerAdapter.quote()`/`SQLServerRelation.quoted()`
-  (`05-open-questions-and-risks.md` #1). Decide whether to fix it in the shared
-  impl (affects other adapters) or take a separate `SqlServer` arm.
-- `[ ]` Add `SqlServer` alongside `Fabric` in `get_canonical_fqn`'s three
+- `[x]` The shared rendering path does **not** escape an embedded delimiter.
+  `BaseRelation::quoted` in `dbt-schemas` is
+  `format!("{q}{s}{q}")`, so `x"q` rendered `"x"q"` — unparseable, and v2
+  would reject names v1 accepts (v1 fixed this in
+  `SQLServerAdapter.quote()`/`SQLServerRelation.quoted()`,
+  `05-open-questions-and-risks.md` #1). Fixed with a `SqlServer` arm in
+  `Relation`'s override, not in the shared default: `quoted()` is inherited by
+  every adapter with a quote character, so widening it would change rendering
+  for Snowflake, Postgres, Redshift and Fabric. That the shared default looks
+  wrong for those too is worth raising upstream separately.
+- `[x]` `SqlServer` alongside `Fabric` in `get_canonical_fqn`'s three
   db/schema/identifier arms, which case-fold an unquoted path part.
   `Fabric | Bigquery` pass it through verbatim; the `_` arm lowercases. SQL
   Server preserves the case it was given, so it belongs with `Fabric`.
-- `[ ]` Add a `SqlServer` constructor mirroring `new_fabric`
-  (`Self::new(AdapterType::Fabric, database, schema, identifier)`).
+- `[x]` `normalize_component` left alone, which is a different question from
+  the one above: it models how the server *resolves* an unquoted name, not how
+  it stores one. Folding to lower case is the right canonicalization for a
+  case-insensitive collation — the bucket Fabric already sits in — and passing
+  through would make `MyTable` and `mytable` distinct `semantic_fqn`s for one
+  object.
+- `[x]` `new_sqlserver` mirroring `new_fabric`. No callers until the metadata
+  module below.
 
 ### Relation factory — `src/relation/factory.rs`
 
-- `[ ]` Add `SqlServer` to the `create_static_relation` match, alongside
-  `Fabric`.
+- `[x]` `SqlServer` in the `create_static_relation` match, alongside `Fabric`.
+
+### Adapter backend — `src/adapter/adapter_factory.rs`
+
+- `[x]` `AdapterType::SqlServer => Backend::SQLServer` in `backend_of`, the
+  same ADBC backend Fabric rides. One of the `E0004`s, and no issue in the
+  Part series claimed it — it landed with Part 4, since no adapter can be
+  constructed without it.
 
 ### SQL type mapping — `src/sql_types.rs`
 
