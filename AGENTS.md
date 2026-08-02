@@ -115,6 +115,32 @@ The repo coordinates work across trackers that other people read.
 - Note in your summary when a draft has drifted from the live issue it mirrors,
   so the user can decide whether to sync.
 
+## Commit messages and PR bodies
+
+Same failure mode as the rest of this file: an AI default that pads instead of
+informing. The diff already shows *what* changed and *how* — a commit or PR
+that re-narrates it is noise a reviewer has to read past.
+
+- **Header**: `type(scope): imperative subject`, lowercase, no trailing period,
+  under ~70 chars — `feat(sqlserver): add SQL type mapping and column
+  builder`, not `Updated some files for type mapping`. Match the fork's actual
+  convention (`git log --oneline`) rather than inventing one; `dbt-core` mixes
+  scoped and unscoped but is consistently lowercase-imperative.
+- **Body carries only what the diff can't**: why this shape and not another,
+  what was rejected and why, what's still open. "Added a SqlServer arm to
+  handle the match" is redundant with the diff; "reproduces v1's
+  `convert_number_type` scale-threshold rule instead of Fabric's flat mapping"
+  is not.
+- **PR body groups by decision, not by file.** One line per non-obvious call
+  (why `standardize_grants_dict`'s `SqlServer` arm joined the
+  Postgres/Bigquery/DuckDB/Alt group instead of the "not implemented" bucket),
+  citing what was checked. Skip an itemized list of files touched — the PR
+  view already has that.
+- **State what you verified, not what should work**: `cargo test -p
+  dbt-adapter --lib: 891 passed`, not "tests should pass now."
+- No invented issue references, no `Signed-off-by` unless asked, no
+  attribution beyond what the harness adds automatically.
+
 ## Writing style for `plan/` and `issues/`
 
 These documents are read by contributors who weren't in the conversation that
@@ -143,6 +169,13 @@ won't accept a file that argues with itself.
   match arms carry a one-line `SAFETY` note, yours gets a one-line note. A
   five-line justification next to four one-liners reads as a warning sign, not
   as care.
+- **No comment that restates the line or banner dividers.**
+  `// increment i` and `// ============ CONTROLLERS ============` cost a
+  reader more than they give back. If deleting the comment loses no
+  information, delete it. `TODO`s are normal here — `adapter_impl.rs` carries
+  plenty, almost all bare (`// TODO: ...`) or owner-tagged (`// TODO(name):
+  ...`), rarely a link — so match that, not a stricter convention this repo
+  doesn't actually follow.
 - **Don't put the archaeology in their source.** Why v1 chose 127, what a
   constant was copied from, which alternative was rejected — that belongs in
   the commit message, the PR body and `plan/`, where the people who need it
