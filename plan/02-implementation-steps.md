@@ -14,13 +14,10 @@ Checkbox legend: `[ ]` not started, `[~]` partially done already in this repo,
 **Crate:** `dbt-adapter-core` — `crates/dbt-adapter-core/src/lib.rs`
 
 - `[ ]` Add `SqlServer` to the `AdapterType` enum (next to `Fabric`, ~line 67).
-- `[ ]` Add a `quote_char` arm: `SqlServer => '"'`. **Decided**
-  (`05-open-questions-and-risks.md` #1) — double-quote identifiers, with
-  `SET QUOTED_IDENTIFIER ON` enforced via connection-init SQL (see §5.4
-  below), not bracket quoting — which v1 also emits as of 1.12, so this is
-  alignment rather than divergence. Compare against `Fabric`'s arm to confirm
-  it uses the same convention before assuming this is novel. The arm alone
-  isn't the whole decision: see the escaping check in §5.5.
+- `[ ]` Add a `quote_char` arm: `SqlServer => '"'` (`05` #1), matching
+  `Fabric`'s and v1's own rendering, with `SET QUOTED_IDENTIFIER ON` as
+  connection-init SQL (§5.4). The arm isn't the whole decision — see the
+  escaping check in §5.5.
 - `[ ]` Run `cargo build -p dbt-adapter-core` — expect it to fail elsewhere
   first (this crate is small), but confirm this specific file compiles.
 
@@ -54,12 +51,10 @@ Checkbox legend: `[ ]` not started, `[~]` partially done already in this repo,
   3. v1 `dbt-sqlserver/dbt/adapters/sqlserver/sqlserver_credentials.py` for
      fields v1 users expect (schema, additional SQL-auth fields, encrypt,
      trust_cert, login_timeout, etc.) that aren't in the v2 auth module yet.
-- `[ ]` Include plain SQL auth fields (`user`/`UID`, `password`/`PWD` without
-  the Entra `tenant_id`/`client_id`/`client_secret` fields) in
-  `SqlServerDbConfig` — **decided in scope for the initial PR**
-  (`05-open-questions-and-risks.md` #2), not deferred. Windows/trusted-
-  connection auth fields are deferred — don't add a `trusted_connection`
-  field yet.
+- `[ ]` Include plain SQL auth fields (`user`/`UID`, `password`/`PWD`, without
+  the Entra `tenant_id`/`client_id`/`client_secret`) in `SqlServerDbConfig` —
+  in scope for the initial PR (`05` #2). Leave out `trusted_connection`; that
+  auth mode is deferred.
 - `[ ]` Uncomment and fix the `// SqlServer,` placeholder (line 46) →
   `SqlServer(Box<SqlServerDbConfig>)`.
 - `[ ]` `cargo build -p dbt-schemas` and follow every resulting error — the
@@ -89,56 +84,48 @@ Checkbox legend: `[ ]` not started, `[~]` partially done already in this repo,
 - `[x]` `mod.rs` exists with `ActiveDirectoryServicePrincipal`,
   `ActiveDirectoryPassword`, `environment` auth flows, unit-tested.
 - `[x]` Dispatch wired in `src/lib.rs:93`.
-- `[ ]` **DECIDED — in scope**: add plain SQL authentication (native SQL
-  Server login: username + password, no Entra/`fedauth` param)
-  (`05-open-questions-and-risks.md` #2). This is a new `SQLServerAuthIR`
-  variant plus a `parse_auth` branch for `authentication: sql` (confirm
-  exact value name against `sqlserver_credentials.py`/`sqlserver_auth.py`
-  rather than inventing one). Unlike the Entra variants, it maps straight to
-  the URI's userinfo (`user:password@host`), the same way v1's ADBC backend
-  (`sqlserver_backend.py:387`) already does it — see `00-current-state.md` §3.
-  Add a unit test alongside the existing ones in `sqlserver/mod.rs`.
-- `[ ]` **DECIDED — deferred**: Windows/trusted-connection auth
-  (`trusted_connection: true` in v1) is out of scope for the initial PR
-  (`05-open-questions-and-risks.md` #2) — only relevant when the dbt process
-  runs on a domain-joined Windows host. Leave the existing
+- `[ ]` Add plain SQL authentication — native SQL Server login, username and
+  password, no Entra/`fedauth` param (`05` #2). A new `SQLServerAuthIR` variant
+  plus a `parse_auth` branch for `authentication: sql`; confirm the value name
+  against `sqlserver_credentials.py`/`sqlserver_auth.py` rather than inventing
+  one. Unlike the Entra variants it maps straight to the URI's userinfo
+  (`user:password@host`), as v1's ADBC backend does
+  (`sqlserver_backend.py:386`). Add a unit test alongside the existing ones.
+- `[ ]` Leave Windows/trusted-connection auth out (`05` #2) — it only matters
+  when dbt itself runs on a domain-joined Windows host. Keep the existing
   `unimplemented!()` stub for `ActiveDirectoryIntegrated` as-is; don't add a
   `trusted_connection` config field.
 - `[ ]` Fill in the `// TODO` params in `apply_connection_args`
-  (`crates/dbt-auth/src/sqlserver/mod.rs`): `encrypt`/TLS trust settings
-  (**important for on-prem servers with self-signed certs** — without this,
-  connections to most on-prem SQL Server instances will fail TLS validation),
-  connection timeout, app name. **Don't re-derive these from the `go-mssqldb`
-  docs from scratch — port directly from
-  `dbt-sqlserver/dbt/adapters/sqlserver/sqlserver_backend.py:367-401`
-  (`build_adbc_connection_uri`)**, which already builds the identical query
-  string (`encrypt`, `TrustServerCertificate`, `connection timeout`) against
-  the same `adbc_driver_mssql` driver, as part of the just-merged
-  [PR #783 "Add experimental ADBC backend"](https://github.com/dbt-msft/dbt-sqlserver/pull/783)
-  (commit `bca9e3e`). Also port its field defaults from
-  `sqlserver_credentials.py:55-59`: `encrypt` defaults `True`, `trust_cert`
-  defaults `False`, `login_timeout` defaults `0` (omit the param when `<= 0`).
-  While there, check its named-instance handling (host containing `\\` →
-  port omitted from the URI) and URL-encoding of user/password
-  (`urllib.parse.quote(..., safe='')`) — v2's current `apply_connection_args`
-  doesn't handle either and both are visible gaps by direct comparison.
+  (`crates/dbt-auth/src/sqlserver/mod.rs`): `encrypt`/TLS trust settings,
+  connection timeout, app name. Without the TLS settings, connections to
+  on-prem instances with self-signed certificates fail validation.
+
+  Port these from `sqlserver_backend.py:367-401` (`build_adbc_connection_uri`)
+  rather than re-deriving them from the `go-mssqldb` docs — v1 builds the
+  identical query string (`encrypt`, `TrustServerCertificate`,
+  `connection timeout`) against the same driver
+  ([PR #783](https://github.com/dbt-msft/dbt-sqlserver/pull/783)). Field
+  defaults are in `sqlserver_credentials.py:55-59`: `encrypt=True`,
+  `trust_cert=False`, `login_timeout=0` (omit the param when `<= 0`). Two more
+  gaps visible in the same comparison: named-instance handling (host containing
+  `\\`, port omitted) and URL-encoding of user/password, neither of which v2's
+  `apply_connection_args` does.
   Reference: https://github.com/microsoft/go-mssqldb#connection-parameters-and-dsn
-- `[ ]` `src/init.rs` — **required, not optional**, as a direct consequence of
-  the quoting decision in 5.1: must issue `SET QUOTED_IDENTIFIER ON` as init
-  SQL on every connection open, since server/login/database defaults for this
-  setting cannot be relied on (it can be forced `OFF` by legacy compatibility
-  settings). Without this, every double-quoted identifier the adapter emits
-  will error or be misinterpreted as a string literal on a session where it's
-  off — v1 measured `USE "db"` as a hard `Msg 102` with it `OFF`. Note this is
-  defense against a misconfigured server, not the common case: v1 verified
-  `sessionproperty('QUOTED_IDENTIFIER') = 1` by default on `go-mssqldb` (the
-  same driver v2 uses), `pyodbc` and `mssql-python`
-  ([PR #795](https://github.com/dbt-msft/dbt-sqlserver/pull/795)). Also
-  evaluate `SET ANSI_NULLS ON` (standard companion setting, some T-SQL
-  constructs — notably indexed views and computed-column indexes — require
-  both `ON`) and `SET XACT_ABORT ON`, which is the one session-level `SET` v1
-  actually issues on connect (`sqlserver_connections.py:401-434`), so a
-  run-time error mid-batch rolls back rather than half-applying.
+- `[ ]` `src/init.rs` — issue `SET QUOTED_IDENTIFIER ON` on every connection
+  open. Required by the quoting decision in 5.1: server, login and database
+  defaults can force it `OFF` via legacy compatibility settings, and on such a
+  session every double-quoted identifier the adapter emits either errors or
+  parses as a string literal (v1 measured `USE "db"` as a hard `Msg 102`).
+  This is insurance against a misconfigured server rather than the common
+  case — v1 verified `sessionproperty('QUOTED_IDENTIFIER') = 1` by default on
+  `go-mssqldb`, `pyodbc` and `mssql-python`
+  ([PR #795](https://github.com/dbt-msft/dbt-sqlserver/pull/795)).
+
+  Also evaluate `SET ANSI_NULLS ON` (its standard companion; indexed views and
+  computed-column indexes need both) and `SET XACT_ABORT ON`, the one
+  session-level `SET` v1 issues on connect
+  (`sqlserver_connections.py:401-434`), which makes a run-time error mid-batch
+  roll back instead of half-applying.
 
 ## 5.5 — Adapter layer (largest step)
 
@@ -194,10 +181,9 @@ others don't).
   `SQLSERVER:type` in the Arrow field metadata. So the SqlServer arm is
   `AdapterType::SqlServer => &SQLSERVER_KEYS` — nothing to derive from your
   catalog queries, and note it's in `dbt-adapter-sql`, not `dbt-adapter`.
-- `[ ]` Review the two `unimplemented!`/error arms (INTERVAL, ARRAY not
-  supported — lines ~920/929) — SQL Server also lacks native ARRAY and
-  INTERVAL types, so these error arms are very likely directly reusable
-  (adjust wording only).
+- `[ ]` Reuse the two error arms for unsupported INTERVAL and ARRAY types
+  (~lines 920/929). SQL Server lacks both natively, so only the wording needs
+  adjusting.
 
 ### Column builder — `src/column/column_builder.rs`
 
@@ -263,15 +249,17 @@ adding the directory is what wires it up (`00-current-state.md` §6).
   `microsoft/dbt-fabric` (42 files). Flat single-file packages exist
   (`dbt-exasol`, 2 files) but are the exception, and the guide's worked example
   rather than the norm.
-- `[ ]` Implement the required macro set with `sqlserver__` dispatch prefix:
-  `create_schema`, `drop_schema`, `drop_relation`, `rename_relation`,
-  `truncate_relation`, `create_table_as`, `create_view_as`, `list_schemas`,
-  `check_schema_exists`, `information_schema_name`, `current_timestamp`,
-  `get_columns_in_relation`, `list_relations_without_caching`.
-- `[ ]` Full macro-by-macro porting map from the 34 v1 `.sql` files: see
-  `03-macros-porting-map.md`.
-- `[ ]` Where SQL Server behavior is close to another already-supported
-  T-SQL/ANSI adapter, delegate rather than reimplement, e.g.:
+- `[ ]` Confirm the required macro set is present and dispatches under
+  `sqlserver__`: `create_schema`, `drop_schema`, `drop_relation`,
+  `rename_relation`, `truncate_relation`, `create_table_as`, `create_view_as`,
+  `list_schemas`, `check_schema_exists`, `information_schema_name`,
+  `current_timestamp`, `get_columns_in_relation`,
+  `list_relations_without_caching`.
+- `[ ]` Work the exceptions to the wholesale copy — deferrals, macros the Rust
+  layer now owns, and defaults the shared `dbt-adapters` package already
+  provides: `03-macros-porting-map.md`.
+- `[ ]` Where SQL Server behavior matches an already-supported T-SQL adapter,
+  delegate rather than reimplement:
   ```jinja
   {% macro sqlserver__create_table_as(temporary, relation, sql) -%}
     {{ return(fabric__create_table_as(temporary, relation, sql)) }}

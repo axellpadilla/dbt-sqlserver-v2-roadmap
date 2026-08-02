@@ -2,39 +2,34 @@
 
 Audited against local checkouts:
 - `dbt-core/` @ commit `f4c63ccca244a2f28456deaef2d91ee539c99d3a` (branch `main`)
-- `dbt-sqlserver/` @ commit `1f3332c` (branch `master`, v1.12.0rc2) — re-audited
-  2026-08-02; the original audit was against `f51fd392f489b69275add5a9940c6380dc9cc9e`
+- `dbt-sqlserver/` @ commit `1f3332c` (branch `master`, v1.12.0rc2)
 
-### What moved in v1 since the first audit (`f51fd39` → `1f3332c`)
+Every file:line below was checked against those checkouts. When they move, the
+fix is re-auditing and bumping the hashes, not loosening the references.
 
-Only the items that change something in this plan:
+### v1 behavior this plan depends on
 
-- **Identifier quoting is no longer a v1↔v2 divergence.**
-  [PR #795](https://github.com/dbt-msft/dbt-sqlserver/pull/795) (commit `8d16c6e`,
-  closes #785 and #409) removed every hand-formatted `[bracket]` identifier from
-  the macros. v1 now emits `"double quotes"` everywhere, escapes an embedded `"`
-  by doubling it, and has a unit test that fails the build if a bracket
-  identifier reappears. Consequences run through `03-macros-porting-map.md`,
-  `05-open-questions-and-risks.md` #1, and §8 below.
-- **Session `SET`s on connect**: v1 issues `SET XACT_ABORT ON` on every
-  connection (`sqlserver_connections.py:401-434`) — the answer to §5.4's "check
-  v1 for other session-level `SET`s" in `02-implementation-steps.md`.
-- **`dbt_sqlserver_use_native_string_types` now defaults `True`** (1.12.0):
-  `STRING` → `VARCHAR(MAX)`, `NVARCHAR` → `NVARCHAR(4000)`, `NCHAR` → `NCHAR(1)`,
-  replacing the legacy `VARCHAR(8000)`/`CHAR(1)` mappings (deprecated). This is
-  the mapping v2's `sql_types.rs` arms should match, not Fabric's.
-- **Catalog reads are `(nolock)`-hinted and temp-relation catalog DDL is kept
-  out of the ambient transaction** (commits `f0afd9f`, `75e9345`, `4ceca61`) —
-  a fix for a real concurrent-incremental deadlock. Relevant to the Rust
-  catalog module (Part 5), which re-implements those reads.
+- **Identifiers render as `"double quotes"`**, with an embedded `"` escaped by
+  doubling, and a unit test that fails the build if a hand-formatted bracket
+  identifier reappears ([#795](https://github.com/dbt-msft/dbt-sqlserver/pull/795),
+  closing #785 and #409). v1 and v2 agree here, so macro bodies port without a
+  quoting rewrite — see `03-macros-porting-map.md` and `05` #1.
+- **`SET XACT_ABORT ON` is issued on every connection**
+  (`sqlserver_connections.py:401-434`) — the only session-level `SET` v1 sets,
+  and input for the init SQL in Step 5.4.
+- **Native string types are the default** as of 1.12.0
+  (`dbt_sqlserver_use_native_string_types`): `STRING` → `VARCHAR(MAX)`,
+  `NVARCHAR` → `NVARCHAR(4000)`, `NCHAR` → `NCHAR(1)`. The legacy
+  `VARCHAR(8000)`/`CHAR(1)` mappings are deprecated; `sql_types.rs` should match
+  the current ones, not Fabric's.
+- **Catalog reads carry `(nolock)` and temp-relation catalog DDL stays out of
+  the ambient transaction** (`f0afd9f`, `75e9345`, `4ceca61`), fixing a
+  concurrent-incremental deadlock. The Rust catalog module re-implements these
+  reads and inherits the problem otherwise.
 
-Not plan-affecting: the outbound-FK drop fix (#632), CI/release plumbing, the
-1.12/Python 3.14 compatibility work.
-
-> Note: the official guide refers to a `dbt-xdbc` crate. In this checkout the
-> equivalent crate is named **`dbt-adbc`** (`crates/dbt-adbc/`). Treat every
-> guide reference to `dbt-xdbc` as `dbt-adbc` for this repo's current layout —
-> re-verify against `crates/` when you start, in case it gets renamed upstream.
+> Note: the guide refers to a `dbt-xdbc` crate. Here the equivalent is
+> **`dbt-adbc`** (`crates/dbt-adbc/`). Read every `dbt-xdbc` reference as
+> `dbt-adbc`, and re-check `crates/` in case it's renamed upstream.
 
 ## 1. `AdapterType` enum — `crates/dbt-adapter-core/src/lib.rs`
 
@@ -46,11 +41,14 @@ pub enum AdapterType {
 }
 ```
 
-No `SqlServer` variant. This is the first thing to add (Step 5.1). `Fabric`
-exists and is the T-SQL sibling — use its `quote_char` arm as the template
-(double quote, same as most warehouses; SQL Server also supports `[bracket]`
-quoting, but v1 has since standardized on double quotes too, so this is no
-longer a divergence — see `05-open-questions-and-risks.md` #1).
+No `SqlServer` variant — this is the first thing to add (Step 5.1). `Fabric` is
+the T-SQL sibling; use its `quote_char` arm as the template (double quote, like
+most warehouses, and what v1 emits too — `05` #1).
+
+The enum is also why SQL Server is absent from the
+[supported-adapter list](https://docs.getdbt.com/docs/dbt-versions/core-upgrade/upgrading-to-v2?version=2.0)
+in the upgrade guide, where Snowflake is GA, BigQuery/Databricks/Redshift are
+Preview and Spark/DuckDB are Beta.
 
 ## 2. ADBC driver registration — `crates/dbt-adbc/src/driver.rs`, `install.rs`
 
@@ -67,16 +65,16 @@ longer a divergence — see `05-open-questions-and-risks.md` #1).
   with ClickHouse (`install.rs:889`)
 - `repl.rs:32` — `"sqlserver" | "mssql" => Ok(Backend::SQLServer)` (adbc REPL alias)
 
-**Action for this project: none required** unless the driver needs new
-connection parameters not yet exposed (see `apply_connection_args` gap in §3).
+Nothing to do here unless the driver needs connection parameters it doesn't yet
+expose (the `apply_connection_args` gap in §3).
 
-**Confirmed: this is the same driver dbt-sqlserver v1 now speaks to, not just
-an architecturally-similar one** — v1 just merged
-[PR #783 "Add experimental ADBC backend"](https://github.com/dbt-msft/dbt-sqlserver/pull/783)
-(commit `bca9e3e`, `master`'s tip), a third connection backend (alongside
-`pyodbc` and `mssql-python`) that opens `adbc_driver_manager.connect(driver="mssql", ...)`
-against the identical `adbc_driver_mssql`/`go-mssqldb` combination. Details
-and how it closes the `apply_connection_args` gaps below: §3.
+This is the same driver v1 speaks to, not merely an architecturally similar
+one. v1's `adbc` backend
+([PR #783](https://github.com/dbt-msft/dbt-sqlserver/pull/783), commit
+`bca9e3e`) — a third option alongside `pyodbc` and `mssql-python` — opens
+`adbc_driver_manager.connect(driver="mssql", ...)` against the same
+`adbc_driver_mssql`/`go-mssqldb` pair, which is why it closes the
+`apply_connection_args` gaps in §3.
 
 ## 3. Auth module — `crates/dbt-auth/src/sqlserver/mod.rs` (337 lines)
 
@@ -96,13 +94,12 @@ and how it closes the `apply_connection_args` gaps below: §3.
 **Explicitly stubbed as `unimplemented!()`** (line ~139):
 `ActiveDirectoryInteractive`, `ActiveDirectoryIntegrated`, `CLI`, `auto`.
 
-**Gaps relative to v1 `dbt-sqlserver`** (`dbt-sqlserver/dbt/adapters/sqlserver/sqlserver_credentials.py`,
-`sqlserver_auth.py`) — v1 also supports plain SQL auth (`authentication: sql`,
-username/password against SQL Server's native login, not Entra) and Windows
-integrated auth via `trusted_connection`. Neither is in the v2 module yet, and
-**plain SQL auth is the default/most common on-prem SQL Server auth mode** —
-this is very likely required for a real "SQL Server" (as opposed to
-"Azure SQL via Entra") adapter to be useful. See `01` and `05`.
+**Gaps relative to v1** (`sqlserver_credentials.py`, `sqlserver_auth.py`): v1
+also supports plain SQL auth (`authentication: sql` — username/password against
+a native SQL Server login, not Entra) and Windows integrated auth via
+`trusted_connection`. Neither is in the v2 module. Plain SQL auth is the most
+common on-prem mode, so without it the adapter serves only Azure SQL/Entra
+targets; it's in scope for the initial PR (`05` #2).
 
 `apply_connection_args` has `// TODO` comments for: connection timeout, dial
 timeout, `encrypt`, app name, log, retries — all standard `go-mssqldb` DSN
@@ -169,7 +166,7 @@ a `SqlServer` arm added alongside:
 
 | File | Fabric arm(s) | What it controls |
 |---|---|---|
-| `src/relation/relation_impl.rs:158,219,270,280,290,488` | shared generic relation impl list (`Databricks \| Fabric \| Postgres \| Redshift \| Salesforce \| Bigquery`) | quoting/inclusion policy for db/schema/identifier |
+| `src/relation/relation_impl.rs:219,270,280,290,488` | `get_database` (database-required list), the db/schema/identifier string-formatting arms, and the static constructor. Note `include_policy` (line 37) needs nothing: Fabric falls through to `Policy::trues()`, which is already 3-part | relation rendering and construction |
 | `src/relation/factory.rs:19` | included in `create_static_relation` match | wires `AdapterType` to `RelationStatic` |
 | `src/sql_types.rs:183,342,353,369,383,391,401,414,546,601,638,884,920,929,959,970` | type-name mapping (`real`, `float`, `bit`, `datetime2(6)`, `time(6)`, `varchar`), metadata key, row-size limits (VARCHAR ≤ 8000 bytes), explicit "INTERVAL/ARRAY not supported" errors | Arrow↔SQL type mapping, per-warehouse type quirks |
 | `src/column/column_builder.rs:31,127-128,237-260` | `Fabric => Ok(Self::build_fabric(field, type_ops))`, dedicated `build_fabric` fn | Arrow record batch → dbt `Column` object |
@@ -177,10 +174,11 @@ a `SqlServer` arm added alongside:
 | `src/metadata/fabric/mod.rs` | 346-line module: full catalog introspection (`INFORMATION_SCHEMA`/`sys.*` queries) | model for `metadata/sqlserver/mod.rs` |
 | `src/adapter/adapter_impl.rs` | 44 occurrences across ~15 functions (`list_schemas`, `valid_incremental_strategies`, `get_adbc_execute_options`, `alter_table_add_columns`, `is_replaceable`, `truncate_relation`, `get_constraint_support`, grants/masking helpers, etc.) | most of the exhaustive per-warehouse behavior surface |
 
-`valid_incremental_strategies` for Fabric (`adapter_impl.rs:534`):
-`&[Append, DeleteInsert, Merge, Microbatch]` — SQL Server v1 supports the same
-set (see `dbt-sqlserver/dbt/include/sqlserver/macros/materializations/models/incremental/incremental_strategies.sql`),
-so this is very likely a direct copy.
+`valid_incremental_strategies` for Fabric (`adapter_impl.rs:534`) is
+`&[Append, DeleteInsert, Merge, Microbatch]`, and v1's
+`SQLServerAdapter.valid_incremental_strategies` (`sqlserver_adapter.py:311-315`)
+returns `["append", "delete+insert", "merge", "microbatch"]` — the same set, so
+the arm is a direct copy.
 
 **Action:** for every `Fabric =>` arm found by `grep -n "Fabric" crates/dbt-adapter/src -r`,
 decide: (a) copy the same behavior for `SqlServer`, (b) diverge because classic
@@ -192,11 +190,6 @@ in `05-open-questions-and-risks.md` as they're found — the compiler will
 enumerate the full list once `AdapterType::SqlServer` exists (Step 5.1).
 
 ## 6. Jinja macros — `crates/dbt-loader/src/dbt_macro_assets/`
-
-**Corrected 2026-08-02** — this section previously reported `dbt-fabric/` as
-holding two macros, from a non-exhaustive grep. Re-checked against a real
-checkout: it holds **42 files**, and they are the v1 Python adapter's Jinja
-tree vendored essentially verbatim.
 
 Packages present: `dbt-adapters` (115 files, the shared base), `dbt-alt`,
 `dbt-bigquery`, `dbt-clickhouse`, `dbt-databricks`, `dbt-duckdb`, `dbt-exasol`,
@@ -215,8 +208,7 @@ How it works (`crates/dbt-loader/src/load_packages.rs`):
 - Package size is a choice, not a contract: `dbt-fabric` ships 42 files,
   `dbt-exasol` ships 2 (`dbt_project.yml` + `macros/adapters.sql`).
 
-Two consequences for the port, both of which changed the plan
-(`03-macros-porting-map.md`, `05-open-questions-and-risks.md` #1):
+Two consequences for the port (`03-macros-porting-map.md`, `05` #1):
 
 1. **The macros are reused, not rewritten.** `dbt-fabric/macros/adapters/schema.sql`
    in v2 is byte-identical to `microsoft/dbt-fabric`'s

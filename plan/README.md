@@ -7,6 +7,17 @@ standalone v1 Python package at [`dbt-sqlserver/`](../dbt-sqlserver)) into
 This plan follows the official contribution guide:
 
 - **Guide**: https://docs.getdbt.com/guides/adapter-creation-v2
+- **Upgrading to v2**: https://docs.getdbt.com/docs/dbt-versions/core-upgrade/upgrading-to-v2?version=2.0 —
+  what v2 changes for everyone, not just adapter authors: the supported-adapter
+  list SQL Server is absent from, parse-time strictness, Jinja and `config`
+  semantics that break v1 macros, per-adapter threading, `--use-v2-parser`.
+  The macro-facing parts are summarized in `03-macros-porting-map.md`.
+- **Fusion package compatibility**: https://docs.getdbt.com/guides/fusion-package-compat —
+  the maintainer-side flow for dbt packages (`dbt-autofix`, `dbtf build`,
+  `require-dbt-version: [">=1.10.0,<3.0.0"]`). Not the adapter port itself, but
+  it's what dbt-sqlserver users will need from every package in their project,
+  and the same `require-dbt-version` convention applies to the macro package
+  this port ships.
 - **Target repo (upstream)**: https://github.com/dbt-labs/dbt-core (local checkout: `dbt-core/`)
 - **Working fork + integration branch**: https://github.com/dbt-sqlserver-next/dbt-core,
   branch `sqlserver-v2-port`. All contributor work lands here first, not
@@ -14,14 +25,13 @@ This plan follows the official contribution guide:
 - **v1 source to port from**: https://github.com/dbt-msft/dbt-sqlserver (local checkout: `dbt-sqlserver/`)
 - **ADBC driver (already exists, CDN-distributed)**: `adbc_driver_mssql`, built on
   [microsoft/go-mssqldb](https://github.com/microsoft/go-mssqldb)
-- **Same driver, working reference implementation**: `dbt-sqlserver/` (v1) just
-  merged [PR #783 "Add experimental ADBC backend"](https://github.com/dbt-msft/dbt-sqlserver/pull/783)
-  (commit `bca9e3e`, now `master`'s tip), which connects to `adbc_driver_mssql`
-  via the identical `sqlserver://` URI scheme v2 uses. Its
-  `sqlserver_backend.py`/`sqlserver_credentials.py` are a working, merged
-  oracle for connection-parameter details (`encrypt`, `TrustServerCertificate`,
-  `connection timeout`, named-instance handling) that v2's
-  `crates/dbt-auth/src/sqlserver/mod.rs` still has as open `// TODO`s — see
+- **Same driver, working reference implementation**: v1's `adbc` backend
+  ([PR #783](https://github.com/dbt-msft/dbt-sqlserver/pull/783), commit
+  `bca9e3e`) connects to `adbc_driver_mssql` via the same `sqlserver://` URI
+  scheme v2 uses. Its `sqlserver_backend.py`/`sqlserver_credentials.py` are a
+  merged, working reference for the connection parameters (`encrypt`,
+  `TrustServerCertificate`, `connection timeout`, named-instance handling) that
+  v2's `crates/dbt-auth/src/sqlserver/mod.rs` still carries as `// TODO`s —
   `00-current-state.md` §3.
 - **Reference adapter for T-SQL family patterns**: Microsoft Fabric
   (`AdapterType::Fabric`), already implemented in this checkout — Fabric Warehouse
@@ -64,7 +74,7 @@ one document:
 3. [`02-implementation-steps.md`](02-implementation-steps.md) — the ordered, file-by-file implementation checklist (the guide's Step 5, made concrete for SQL Server).
 4. [`03-macros-porting-map.md`](03-macros-porting-map.md) — table mapping every v1 Jinja macro in `dbt-sqlserver/dbt/include/sqlserver/macros/` to its v2 destination and porting notes.
 5. [`04-testing-and-validation.md`](04-testing-and-validation.md) — type-checking, smoke testing, jaffle-shop acceptance bar, CI coordination process, SQL Server-specific test matrix (auth modes, on-prem vs Azure SQL DB vs Azure SQL MI vs Fabric-adjacent).
-6. [`05-open-questions-and-risks.md`](05-open-questions-and-risks.md) — decisions that need a human call before/during implementation, plus known risk areas.
+6. [`05-open-questions-and-risks.md`](05-open-questions-and-risks.md) — the settled decisions (quoting, auth surface, TLS, deferred scope, smoke-test target) and the known risk areas.
 
 ## Branching strategy
 
@@ -86,12 +96,11 @@ workspace-wide until all arms are filled in. Never merge that to
 
 ## Why `dbt-core/` and `dbt-sqlserver/` aren't submodules
 
-Both are `.gitignore`d in the root workspace repo and cloned via the root
-`Makefile` (`make setup`) instead of being tracked as git submodules. This
-was revisited once the workspace repo went public and started acting as a
-shared coordination point (`issues/`, this plan) — submodules would give
-collaborators a reproducible pinned checkout, which sounds like exactly what
-a public collaboration repo should want. Two things outweigh that:
+Both are `.gitignore`d here and cloned via the `Makefile` (`make setup`) rather
+than tracked as submodules. This was revisited when the repo went public and
+became a shared coordination point: submodules would give collaborators a
+pinned, reproducible checkout, which is normally what a public collaboration
+repo wants. Two things outweigh it:
 
 - **The audience for `plan/` mostly doesn't need the code checked out at
   all.** Submodules add mandatory `git submodule update --init` friction to
@@ -119,6 +128,7 @@ and `DbConfig::SqlServer` struct exist, since after that point `cargo build -p
 dbt-adapter` becomes the todo list generator described in the guide's "Compiler-
 Driven Completeness" section.
 
-Read `01` and `05` before writing any code — several SQL Server–specific decisions
-(2-part vs 3-part naming, quoting, auth surface) need to be locked in first because
-they're load-bearing for almost every later file.
+Read `01` and `05` before writing any code. The SQL Server–specific decisions
+there — quoting and escaping, auth surface, TLS parameters, deferred scope,
+smoke-test target — are settled, and they're load-bearing for nearly every file
+that follows.

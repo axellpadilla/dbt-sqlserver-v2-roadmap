@@ -33,14 +33,13 @@ cargo test -p dbt-schemas
 ## 2. Smoke testing against a real SQL Server instance
 
 Per the guide: exercise table, view, incremental, and seed materializations at
-minimum. For SQL Server specifically, plan for **multiple target flavors**
-since "SQL Server" isn't one homogeneous product:
+minimum. "SQL Server" isn't one product, so the targets are ranked (`05` #5):
 
-| Target | Why it matters | How to get one |
-|---|---|---|
-| SQL Server on Linux/Windows (Docker) | On-prem parity, tests plain SQL auth + TLS/encrypt gap from `02-implementation-steps.md` §5.4 | `make test-env && make server` from the workspace root — reuses `dbt-sqlserver/docker-compose.yml`/`make server` directly rather than duplicating that setup; see the Makefile |
-| Azure SQL Database | Tests Entra auth flows already implemented in `dbt-auth/src/sqlserver/mod.rs` | Requires an Azure subscription — coordinate with dbt Labs per the CI section below if no personal subscription is available |
-| Azure SQL Managed Instance | Closest to on-prem behavior but Azure-hosted; edge cases around cross-database queries | Same as above |
+| Target | Priority | Why it matters | How to get one |
+|---|---|---|---|
+| SQL Server on Linux/Windows (Docker) | **Primary** | Where most v1 users are; exercises plain SQL auth and the TLS/encrypt work in `02-implementation-steps.md` §5.4 | `make test-env && make server` from the workspace root, reusing `dbt-sqlserver/docker-compose.yml` |
+| Azure SQL Database | Secondary | Exercises the Entra auth flows already implemented in `dbt-auth/src/sqlserver/mod.rs` | Needs an Azure subscription — coordinate with dbt Labs per §3 if there's no personal one |
+| Azure SQL Managed Instance | Not targeted | Azure-hosted but closest to on-prem; edge cases around cross-database queries | — |
 
 ```bash
 cargo build --bin dbt
@@ -52,6 +51,13 @@ cargo build --bin dbt
 [jaffle-shop](https://github.com/dbt-labs/jaffle-shop). Port/adjust jaffle-shop
 seeds and models as needed for SQL Server type/syntax differences (e.g.
 `STRING_AGG` version requirements noted in `03-macros-porting-map.md`).
+
+If the test project pulls in dbt packages, they need Fusion compatibility of
+their own — `require-dbt-version` including `2.0.0`, per the
+[package compatibility guide](https://docs.getdbt.com/guides/fusion-package-compat).
+A package that excludes it warns today and errors later, so a failure there is
+the package's, not the adapter's. `dbt_utils`, `audit_helper`,
+`dbt_external_tables` and `dbt_project_evaluator` are already compatible.
 
 ### SQL Server-specific smoke test matrix (beyond the guide's generic list)
 
@@ -88,12 +94,28 @@ seeds and models as needed for SQL Server type/syntax differences (e.g.
 - [ ] Long-running/large incremental `MERGE` — validate generated T-SQL
   against SQL Server's actual `MERGE` syntax constraints (stricter than some
   other warehouses about statement termination, output clauses).
+- [ ] Behaviors v2 changes for every adapter, which the smoke-test project
+  should assert rather than inherit assumptions about
+  ([upgrade guide](https://docs.getdbt.com/docs/dbt-versions/core-upgrade/upgrading-to-v2?version=2.0)):
+  unit tests running before the rest of the DAG in `dbt build`, compile
+  continuing past an error to unrelated DAG nodes, and a seed with trailing
+  commas no longer producing an extra column.
 
-## 3. CI coordination (per the guide — do not skip)
+### Cheap early signal: the v1.12 v2 parser
 
-Community contributors **cannot run dbt Labs' CI independently** for warehouse
-validation; this is an explicit known gap in the guide, not something to work
-around locally.
+Before any Rust work, `dbt parse --use-v2-parser` runs v2's Rust parser against
+the existing Python adapter, surfacing project/macro/manifest incompatibilities
+(the parse-time strictness in `03-macros-porting-map.md`) without needing the
+adapter to exist in v2 at all. That's what
+[dbt-msft/dbt-sqlserver#770](https://github.com/dbt-msft/dbt-sqlserver/issues/770)
+tracks. `uvx dbt-autofix deprecations` mechanically clears the YAML-side
+deprecations that v2 rejects.
+
+## 3. CI coordination
+
+Community contributors can't run dbt Labs' CI for warehouse validation. The
+guide names this as a known gap, so it's a coordination step, not something to
+route around locally.
 
 1. Once the PR is ready for warehouse validation, post in `#adapter-ecosystem`
    on the [dbt Community Slack](https://community.getdbt.com/).
@@ -105,18 +127,15 @@ around locally.
   (`adbc_driver_mssql` limitations, if any are discovered during smoke
    testing), and rough timeline — this avoids surprises during review.
 
-## 4. Regression check against v1 behavior (project-specific addition)
+## 4. Regression check against v1 behavior
 
-Since a working v1 Python adapter (`dbt-sqlserver/`) exists in this workspace
-with its own test suite (`dbt-sqlserver/tests/`, `pytest.ini`), use it as a
-behavioral oracle where useful:
+The v1 Python adapter and its test suite (`dbt-sqlserver/tests/`) are a
+behavioral oracle:
 
-- [ ] Skim `dbt-sqlserver/tests/` for integration test fixtures/models that
-  encode known-tricky SQL Server behavior (e.g. quoting edge cases,
-  MERGE edge cases) and mirror them in the v2 smoke-test project rather than
-  inventing new test cases from scratch.
-- [ ] Do **not** port the v1 pytest suite structure itself — v2's testing
-  approach is `cargo test` (Rust unit tests) + `dbt build`-based smoke/e2e
-  testing coordinated with dbt Labs' CI, not a standalone pytest adapter
-  test suite (that infrastructure has no v2 equivalent per the guide's
+- [ ] Mine `dbt-sqlserver/tests/` for fixtures encoding known-tricky SQL Server
+  behavior — quoting edge cases, MERGE edge cases — and mirror them in the v2
+  smoke-test project instead of inventing equivalents.
+- [ ] Don't port the pytest suite structure itself. v2 tests with `cargo test`
+  plus `dbt build`-based smoke/e2e runs coordinated with dbt Labs' CI; a
+  standalone pytest adapter suite has no v2 equivalent (per the guide's
   "what doesn't exist in v2" list).

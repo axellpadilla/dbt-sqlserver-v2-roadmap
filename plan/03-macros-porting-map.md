@@ -3,62 +3,72 @@
 Source tree: `dbt-sqlserver/dbt/include/sqlserver/macros/` (34 files).
 Destination: `dbt-core/crates/dbt-loader/src/dbt_macro_assets/dbt-sqlserver/macros/`.
 
-**The baseline is "vendor the v1 tree", not "port macro by macro"** (established
-2026-08-02 against a real checkout — see `00-current-state.md` §6). v2's
+**The baseline is to vendor the v1 tree, not to port macro by macro.** v2's
 `dbt-fabric/` package is 42 files copied essentially verbatim from
-`microsoft/dbt-fabric`'s `dbt/include/fabric/macros/` — same directory layout,
-same bodies (`schema.sql` is byte-identical). The package is picked up by name
-(`format!("dbt-{adapter_type}")`), so the mechanical part of Step 5.6 is:
-copy `dbt/include/sqlserver/macros/` across, add `dbt_project.yml`
-(`name: dbt_sqlserver`, `macro-paths: ["macros"]`) and `__init__.py`.
+`microsoft/dbt-fabric` — same directory layout, same bodies (`schema.sql` is
+byte-identical). Packages are picked up by name (`format!("dbt-{adapter_type}")`),
+so the mechanical part of Step 5.6 is: copy `dbt/include/sqlserver/macros/`
+across, add `dbt_project.yml` (`name: dbt_sqlserver`,
+`macro-paths: ["macros"]`) and `__init__.py`. Details in `00-current-state.md` §6.
 
-The table below therefore reads as **exceptions to a wholesale copy**, not as a
-per-file decision to make from scratch. What still needs real judgment:
+The table below is therefore a list of exceptions to a wholesale copy. What
+still needs judgment:
 
-- Which macros v2's Rust layer now owns (catalog/metadata especially — don't
-  ship Jinja that duplicates or contradicts `metadata/sqlserver/mod.rs`).
-- Whether the shared `dbt-adapters` package (115 files) already provides a
-  default that v1's override existed only to work around.
-- Whether each body compiles and behaves under v2's Jinja engine and
-  materialization contract — vendored-verbatim is the starting point, not proof
-  of correctness.
-- The "skip — deferred" rows below: skipping is a real user-visible behavior
-  change (e.g. no `indexes.sql` means index configs are silently ignored, not
-  rejected), and Fabric ships its equivalents. Revisit whether deferring is
-  still the right call now that copying is nearly free.
+- Which macros v2's Rust layer now owns — catalog and metadata especially,
+  where shipping Jinja that duplicates `metadata/sqlserver/mod.rs` is worse
+  than shipping nothing.
+- Whether the shared `dbt-adapters` package already provides a default that
+  v1's override only existed to work around.
+- Whether each body behaves under v2's Jinja engine and materialization
+  contract. Vendored-verbatim is the starting point, not evidence of
+  correctness.
 
-**Quoting — no longer a porting rewrite** (full rationale in
-`05-open-questions-and-risks.md` #1). This section used to say every
-`[bracket]` literal had to be rewritten during the port. That work has since
-been done upstream in v1:
-[PR #795](https://github.com/dbt-msft/dbt-sqlserver/pull/795) (commit `8d16c6e`,
-v1.12.0rc2) removed every hand-formatted bracket identifier — `USE` now goes
-through `get_use_database_sql()`, and `CREATE SCHEMA`, contract column lists,
-grantees, index/constraint names and generated test-view names all go through
-`adapter.quote()`. v1 and v2 now agree on `"double quotes"`, so **port macro
-bodies verbatim; don't rewrite quoting**.
+**Quoting needs no rewrite.** v1 emits `"double quotes"` everywhere as of
+1.12.0rc2 ([#795](https://github.com/dbt-msft/dbt-sqlserver/pull/795)) — `USE`
+via `get_use_database_sql()`, and `CREATE SCHEMA`, contract column lists,
+grantees, index/constraint names and generated test-view names via
+`adapter.quote()`. Port the bodies as they are. Three related points:
 
-Three things to carry over rather than re-derive:
-
-- **The only remaining `[brackets]` in v1 are inside server-side `QUOTENAME()`
-  calls** (`adapters/indexes.sql`, `apply_masks.sql`). That is dynamic SQL
-  built inside T-SQL, where brackets are the injection-safe idiom — it is not
-  a quoting inconsistency and should not be "fixed" during porting. (Those two
-  files are deferred anyway, per `05` #4.) For calibration: v2's vendored
-  `dbt-fabric` macros still hand-format brackets freely, so v1's cleanliness
-  here exceeds the upstream bar rather than merely meeting it.
+- **v1's remaining `[brackets]` are inside server-side `QUOTENAME()` calls**
+  (`adapters/indexes.sql`, `apply_masks.sql`) — dynamic SQL built inside T-SQL,
+  where brackets are the injection-safe idiom. Don't "fix" them. For
+  calibration, v2's vendored `dbt-fabric` macros hand-format brackets freely,
+  so v1 is cleaner than the upstream bar here, not merely level with it.
 - **Identifiers interpolated into string literals must be quoted and
-  qualified.** `OBJECT_ID('schema.table')` returns `NULL` — not an error — when
-  the schema contains a `.` or a `"`, and callers read that as "does not
-  exist". In v1 that silently skipped drop-before-create guards (then hit
-  `Msg 2714`) and made `apply_masks` find no columns; `sp_rename` failed the
-  same way. v1 fixed 11 such sites. Any v2 macro *or Rust catalog query* that
-  builds a name inside a string literal inherits this bug — see `05` risks.
-- **Escaping**: v1 doubles an embedded `"` (`ab"cd` → `"ab""cd"`) in both
-  `adapter.quote()` and relation rendering. v2's `quote_char`-based rendering
-  must do the same, or names v1 accepts will break in v2 (`05` #1).
+  qualified.** `OBJECT_ID('schema.table')` returns `NULL` rather than erroring
+  when the schema contains a `.` or a `"`, and callers read that as "does not
+  exist" — in v1 that skipped drop-before-create guards and left `apply_masks`
+  finding no columns. 11 sites, fixed in #795. Any v2 macro or Rust catalog
+  query that builds a name inside a string literal inherits it (`05` risks).
+- **Escaping**: v1 doubles an embedded `"` in both `adapter.quote()` and
+  relation rendering. v2 must too, or names v1 accepts break (`05` #1).
 
-Cross-check against how `Fabric`'s existing v2 macros render quoted identifiers.
+## v2 semantics that break v1 macro bodies
+
+From the [upgrade guide](https://docs.getdbt.com/docs/dbt-versions/core-upgrade/upgrading-to-v2?version=2.0).
+These apply to every ported macro, so check for them before assuming a verbatim
+copy works:
+
+- **Parse fails where v1 deferred to compile.** A call to a macro that doesn't
+  exist, a missing generic test, or an undefined `var()` all fail at *parse* in
+  v2. A ported macro calling a v1 helper with no v2 equivalent
+  (`get_query_options`, `load_cached_relation`, …) therefore breaks the whole
+  project at parse, not just the model that uses it.
+- **Relations stringify to fully qualified names.** `{{ relation }}` for a
+  non-existent relation prints `my_db.my_schema.my_table` in v2 where v1
+  printed `None`. Any macro branching on the string form of a relation needs
+  re-reading.
+- **`return()` doesn't compose with concatenation.** `return('xyz') + 'abc'`
+  silently drops the `+ 'abc'` — build the string first, then return it.
+- **`config.get()`/`config.require()` no longer read `meta`.** Use
+  `config.meta_get()` / `config.meta_require()`. v1 macros reaching into `meta`
+  through `config.get()` return nothing in v2, silently.
+- **Seeds no longer invent a column for a trailing comma**, and unit tests all
+  run before the rest of the DAG in `dbt build` — both change what the
+  smoke-test project should expect (`04-testing-and-validation.md`).
+
+`dbt-autofix` (`uvx dbt-autofix deprecations`) mechanically fixes the YAML-side
+deprecations; it does not touch macro bodies.
 
 ## Required core macros (guide's mandatory list)
 
@@ -86,7 +96,7 @@ Cross-check against how `Fabric`'s existing v2 macros render quoted identifiers.
 | `adapters/apply_masks.sql` | **Skip — deferred** (`05-open-questions-and-risks.md` #4). SQL Server-specific dynamic data masking feature, out of scope for the initial PR; track as a follow-up issue once merged |
 | `adapters/catalog.sql` | Cross-check against new `crates/dbt-adapter/src/metadata/sqlserver/mod.rs` (Rust) — v2 moves most catalog querying to Rust; only port the parts still expected to live in Jinja (check what `Fabric`'s macros vs. Rust module each own) |
 | `adapters/columns.sql` | Port — `get_columns_in_relation`, empty-subquery CTE handling |
-| `adapters/indexes.sql` | **Skip — deferred** (`05-open-questions-and-risks.md` #4). Index/columnstore materialization config is out of scope for the initial PR |
+| `adapters/indexes.sql` | **Skip — deferred** (`05` #4), but not silently: with no `sqlserver__get_create_index_sql`, the shared `default__` returns `None` and `create_indexes` no-ops, so a model configured with `indexes:` builds with no indexes and no warning. Ship an arm that raises a compiler error pointing at the follow-up issue. Note the shape when it comes back: v1 already implements the same dispatch contract Postgres uses, and the blocker is `adapter.parse_index` being `unimplemented!()` in Rust for every adapter |
 | `adapters/metadata.sql` | Port — schema listing, `information_schema_name` |
 | `adapters/persist_docs.sql` | Port if column/relation comment support is in scope — `dbt-fabric` already has a `persist_docs.sql` in v2 (`crates/dbt-loader/src/dbt_macro_assets/dbt-fabric/macros/adapters/persist_docs.sql`) — use as direct template |
 | `adapters/relation.sql` | Port — drop/rename/temp-relation macros |

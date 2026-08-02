@@ -34,5 +34,7 @@ submodules. See `plan/README.md` for why.
 ## References
 
 - Guide: https://docs.getdbt.com/guides/adapter-creation-v2
+- Upgrading to v2: https://docs.getdbt.com/docs/dbt-versions/core-upgrade/upgrading-to-v2?version=2.0
+- Fusion package compatibility: https://docs.getdbt.com/guides/fusion-package-compat
 - Target repo: https://github.com/dbt-labs/dbt-core
 - v1 adapter: https://github.com/dbt-msft/dbt-sqlserver

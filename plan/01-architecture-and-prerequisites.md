@@ -34,10 +34,9 @@ Source: https://docs.getdbt.com/guides/adapter-creation-v2 (Steps 1–4)
 | 6 | `dbt-loader` | `crates/dbt-loader/` | New `dbt_macro_assets/dbt-sqlserver/` package: `dbt_project.yml` + macros |
 | — | `dbt-init` (optional) | `crates/dbt-init/` | Interactive `dbt init` profile prompts |
 
-Three more crates carry `AdapterType::Fabric` arms and were missing from this
-table (found 2026-08-02 by `grep -rl "AdapterType::Fabric" crates/`). Each is
-small, but each is a compile error once the enum variant lands, so budget for
-them rather than being surprised mid-Part-1:
+Three smaller crates also carry `AdapterType::Fabric` arms. Each is a compile
+error once the enum variant lands, so budget for them rather than meeting them
+mid-Part-1 (`grep -rl "AdapterType::Fabric" crates/` regenerates this list):
 
 | Crate | Site | What it decides |
 |---|---|---|
@@ -53,28 +52,34 @@ them rather than being surprised mid-Part-1:
    [adapter dispatch](https://docs.getdbt.com/reference/dbt-jinja-functions/dispatch).
 3. **SQL Server-specific decisions that are load-bearing across many files**
    (lock these in via `05-open-questions-and-risks.md` before writing code):
-   - **Identifier quoting — DECIDED**: `quote_char = '"'` (double quotes),
-     with an embedded `"` doubled when rendering, plus `SET QUOTED_IDENTIFIER
-     ON` as connection-init SQL. v1 now quotes the same way (as of 1.12.0rc2),
-     so macro bodies port verbatim. Full rationale and downstream
-     consequences: `05-open-questions-and-risks.md` #1.
-   - **2-part vs 3-part naming**: SQL Server is 3-part (`database.schema.table`),
-     unlike Exasol's 2-part example in the guide. Confirm `Fabric`'s
-     `include_policy` (`relation_impl.rs:219`, `Policy::new(...)`) already
-     encodes 3-part inclusion — if so it's very likely directly reusable.
+   - **Identifier quoting — decided**: `quote_char = '"'`, an embedded `"`
+     doubled when rendering, and `SET QUOTED_IDENTIFIER ON` as connection-init
+     SQL. v1 quotes the same way as of 1.12.0rc2, so macro bodies port as they
+     are. Rationale and consequences: `05` #1.
+   - **2-part vs 3-part naming**: SQL Server is 3-part
+     (`database.schema.table`), unlike Exasol's 2-part example in the guide.
+     Already handled: `include_policy` (`relation_impl.rs:37`) special-cases
+     only DuckDB, ClickHouse, Exasol and Salesforce, and everything else —
+     Fabric included — falls through to `Policy::trues()`, which is 3-part. No
+     arm needed there. `get_database` (line 219) is separate: it lists the
+     adapters for which a missing database is an error, and `SqlServer` belongs
+     in that list alongside `Fabric`.
    - **Case sensitivity**: default SQL Server collations are
-     case-*insensitive* (unlike Exasol's uppercasing behavior in the guide's
-     worked example) but this is collation-dependent per-database/per-column.
-     Don't assume `upper()` normalization is needed or safe — verify against
-     the actual collation behavior instead of copying the Exasol pattern
-     blindly.
-   - **Auth surface — DECIDED**: plain SQL auth (native login) is in scope
-     for the initial PR; Windows/trusted-connection auth is deferred. See
-     `05-open-questions-and-risks.md` #2 for rationale and implementation
-     notes.
+     case-*insensitive*, unlike Exasol's uppercasing in the guide's worked
+     example, and it varies per database and per column. Verify against actual
+     collation behavior rather than assuming `upper()` normalization is needed
+     or safe.
+   - **Auth surface — decided**: plain SQL auth (native login) is in scope for
+     the initial PR; Windows/trusted-connection auth is deferred. `05` #2.
    - **Required connection parameters**: host, port (default 1433 — already
      implemented), database, schema, authentication mode, and TLS/encrypt
      settings (currently a `// TODO` in `apply_connection_args`).
+   - **Threading stance**: v2 treats `threads` per adapter — Snowflake and
+     Databricks auto-manage parallelism and read it as a cap, BigQuery and
+     Redshift honor it for rate limits and support `--threads 0` for dynamic
+     tuning ([upgrade guide](https://docs.getdbt.com/docs/dbt-versions/core-upgrade/upgrading-to-v2?version=2.0)).
+     SQL Server needs a deliberate choice here; honoring the user's value is
+     the conservative default, given how much on-prem capacity varies.
    - **Transaction support**: SQL Server supports transactions; confirm how
      `auto_begin` is handled in macros (`{% call statement(..., auto_begin=False) %}`
      patterns from `Fabric`/other adapters) versus v1's transaction handling in
@@ -101,20 +106,20 @@ them rather than being surprised mid-Part-1:
 ## AI-assisted development (per the guide)
 
 If using an LLM/agent to generate match arms:
-- Always give it: the exact file + `match` block being edited, the equivalent
-  `Fabric` arm (or another adapter's arm) as a reference, the actual
-  `cargo build -p <crate>` error text, and SQL Server-specific facts (catalog
-  table names, connection fields) rather than letting it guess.
-- **Do not trust hallucinated file paths.** Use the file table in
-  `02-implementation-steps.md` and `00-current-state.md` as ground truth —
-  re-`grep` the repo if a referenced path doesn't exist, since this checkout's
-  layout already diverges from the guide in one place (`dbt-xdbc` → `dbt-adbc`).
-- **Always verify with `cargo build -p <crate>`** after each generated arm.
-  Never assume it compiles from inspection alone.
-- v1 SQL macro patterns don't always port cleanly — Jinja macro *names* and
-  *dispatch prefix* (`sqlserver__`) transfer, but verify materialization
-  control flow against an existing v2 macro (e.g. `Fabric`'s) rather than
-  assuming v1's macro is drop-in compatible with v2's task runner.
+
+- Give it the exact file and `match` block, the equivalent `Fabric` arm as a
+  reference, the actual `cargo build -p <crate>` error text, and the SQL
+  Server-specific facts (catalog table names, connection fields) rather than
+  letting it guess them.
+- Treat file paths as claims to check. The tables in `00-current-state.md` and
+  `02-implementation-steps.md` are ground truth; `grep` the repo when a
+  referenced path doesn't exist, and remember this checkout already diverges
+  from the guide once (`dbt-xdbc` → `dbt-adbc`).
+- Verify with `cargo build -p <crate>` after each arm. Inspection isn't
+  evidence that it compiles.
+- Macro *names* and the `sqlserver__` dispatch prefix transfer; materialization
+  control flow may not. Check each against an existing v2 macro rather than
+  assuming v1's is drop-in for v2's task runner.
 
 ## Dev machine setup
 
@@ -146,8 +151,7 @@ z3 pkg-config`). If disk fills during build: `cargo clean`.
 4. Re-run `cargo build -p <crate-name>` until clean.
 5. Move to the next crate in the table.
 
-For a SQL Server–specific worked example, run this first to see the exact
-current error surface once the enum variant lands:
+Once the enum variant lands, this sequence shows the full error surface:
 
 ```bash
 cargo build -p dbt-adapter-core
