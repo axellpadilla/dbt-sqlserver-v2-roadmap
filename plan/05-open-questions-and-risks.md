@@ -35,13 +35,19 @@ rather than per-file. All five are locked; raise them with dbt Labs in
      verbatim, so pre-escaping its input would double-escape if upstream ever
      starts escaping. Check whether v2's relation rendering escapes at all
      before assuming the one-character arm is enough — Part 4 work.
-   - `SET QUOTED_IDENTIFIER ON` in `crates/dbt-auth/src/sqlserver/init.rs`
-     (Step 5.4). Defensive, not a blocker: v1 measured
-     `sessionproperty('QUOTED_IDENTIFIER') = 1` on a live server for all three
-     of its backends, including the `go-mssqldb` one v2 uses. Issue it anyway —
-     server-level `user options`, a login default or legacy compatibility
-     settings can force it `OFF`, and the failure is total (`USE "db"` is a
-     hard `Msg 102`).
+   - `SET QUOTED_IDENTIFIER ON` as connection-init SQL, issued from
+     `dbt-adapter` (Step 5.5) — not from `dbt-auth`, which has no connection to
+     issue it on. Defensive, not a blocker: measured directly against
+     `make server` through the `go-mssqldb` ADBC driver v2 uses,
+     `sessionproperty('QUOTED_IDENTIFIER') = 1`, matching what v1 measured for
+     all three of its backends. Issue it anyway — server-level `user options`,
+     a login default or legacy compatibility settings can force it `OFF`, and
+     the failure is total (`USE "db"` is a hard `Msg 102`).
+
+     The same hook carries `SET XACT_ABORT ON`, which is the one that is
+     measurably absent: `@@OPTIONS & 16384 = 0` on a fresh connection, while v1
+     sets it on connect and several v1 macro bodies are written assuming it.
+     Step 5.4 has the full measurement.
 
      A client default can force it `OFF` too, which isn't hypothetical:
      `sqlcmd` from `mssql-tools18` connects with

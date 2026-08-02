@@ -145,49 +145,74 @@ Three field-level calls worth knowing before writing the struct:
 - `[x]` `mod.rs` exists with `ActiveDirectoryServicePrincipal`,
   `ActiveDirectoryPassword`, `environment` auth flows, unit-tested.
 - `[x]` Dispatch wired in `src/lib.rs` `auth_for_backend`.
-- `[ ]` Add plain SQL authentication — native SQL Server login, username and
-  password, no Entra/`fedauth` param (`05` #2). A new `SQLServerAuthIR` variant
-  plus a `parse_auth` branch for `authentication: sql`; confirm the value name
-  against `sqlserver_credentials.py`/`sqlserver_auth.py` rather than inventing
-  one. Unlike the Entra variants it maps straight to the URI's userinfo
-  (`user:password@host`), as v1's ADBC backend does
-  (`sqlserver_backend.py` `build_adbc_connection_uri`). Add a unit test
-  alongside the existing ones.
+- `[x]` Plain SQL authentication — native SQL Server login, username and
+  password, no Entra/`fedauth` param (`05` #2). `SQLServerAuthIR::SqlLogin`
+  plus a `parse_auth` branch for `authentication: sql`, the value
+  `SQLServerCredentials.authentication` defaults to. A top-level variant, not
+  a refinement of an Entra one: a server-local login is a different
+  authentication contract, which is what this crate's `AGENTS.md` invariant 5
+  asks you to classify before touching the enum.
+
+  It sets `user id` and `password` as query pairs, like the three variants
+  already in the file, rather than the URI userinfo v1's
+  `build_adbc_connection_uri` writes. Both work against `go-mssqldb`, and
+  `append_pair` percent-encodes, which closes the user/password encoding gap
+  v1 handles by hand.
 - `[ ]` Leave Windows/trusted-connection auth out (`05` #2) — it only matters
   when dbt itself runs on a domain-joined Windows host. Keep the existing
   `unimplemented!()` stub for `ActiveDirectoryIntegrated` as-is; don't add a
   `trusted_connection` config field.
-- `[ ]` Fill in the `// TODO` params in `apply_connection_args`
-  (`crates/dbt-auth/src/sqlserver/mod.rs`): `encrypt`/TLS trust settings,
-  connection timeout, app name. Without the TLS settings, connections to
-  on-prem instances with self-signed certificates fail validation.
-
-  Port these from `sqlserver_backend.py` `build_adbc_connection_uri` rather
-  than re-deriving them from the `go-mssqldb` docs — v1 builds the
-  identical query string (`encrypt`, `TrustServerCertificate`,
-  `connection timeout`) against the same driver
-  ([PR #783](https://github.com/dbt-msft/dbt-sqlserver/pull/783)). Field
-  defaults are on `SQLServerCredentials`: `encrypt=True`,
-  `trust_cert=False`, `login_timeout=0` (omit the param when `<= 0`). Two more
-  gaps visible in the same comparison: named-instance handling (host containing
-  `\\`, port omitted) and URL-encoding of user/password, neither of which v2's
-  `apply_connection_args` does.
+- `[x]` `encrypt`, `TrustServerCertificate` and `connection timeout` in
+  `apply_connection_args` (`crates/dbt-auth/src/sqlserver/mod.rs`). Ported from
+  `sqlserver_backend.py` `build_adbc_connection_uri`, which builds the
+  identical query string against the same driver
+  ([PR #783](https://github.com/dbt-msft/dbt-sqlserver/pull/783)), rather than
+  re-derived from the `go-mssqldb` docs. Defaults are `SQLServerCredentials`':
+  `encrypt=True`, `trust_cert=False`, `login_timeout=0` (param omitted when
+  not positive). Both flags accept a YAML boolean or its string spelling,
+  following `clickhouse/mod.rs` `secure`.
   Reference: https://github.com/microsoft/go-mssqldb#connection-parameters-and-dsn
-- `[ ]` `src/init.rs` — issue `SET QUOTED_IDENTIFIER ON` on every connection
-  open. Required by the quoting decision in 5.1: server, login and database
-  defaults can force it `OFF` via legacy compatibility settings, and on such a
-  session every double-quoted identifier the adapter emits either errors or
-  parses as a string literal (v1 measured `USE "db"` as a hard `Msg 102`).
-  This is insurance against a misconfigured server rather than the common
-  case — v1 verified `sessionproperty('QUOTED_IDENTIFIER') = 1` by default on
-  `go-mssqldb`, `pyodbc` and `mssql-python`
-  ([PR #795](https://github.com/dbt-msft/dbt-sqlserver/pull/795)).
+- `[ ]` Named instances still fail. `host: myserver\SQLEXPRESS` is rejected at
+  URI parse with `invalid domain character`, because the `url` crate won't
+  accept a backslash in a host; v1 omits the port and lets the SQL Server
+  Browser resolve the instance. Percent-encoding to `%5C` parses on our side,
+  but nothing in this workspace can confirm `go-mssqldb` decodes it back, and
+  a host rewrite that silently reaches the wrong server is worse than the
+  current loud error. `TODO` at the parse site.
+- `[ ]` `DEFAULT_AUTH` is still `ActiveDirectoryServicePrincipal`, where v1
+  defaults to `sql`. Fabric maps to the same backend
+  (`adapter_factory.rs` `AdapterType::Fabric => Backend::SQLServer`) and shares
+  this module, and `auth_for_backend` receives only a `Backend`, so the two
+  can't be told apart inside `dbt-auth`. Changing the constant would change
+  Fabric. Consequence today: a ported v1 profile that omits `authentication`
+  gets `client_id is required` rather than a SQL login. Resolving it means
+  passing the adapter type in, or defaulting the field before the config
+  reaches `dbt-auth` — either way a `dbt-adapter` change (§5.5).
+- `[ ]` Connection-init SQL — **not a `dbt-auth` file, and not
+  `QUOTED_IDENTIFIER`.** Two findings move this:
 
-  Also evaluate `SET ANSI_NULLS ON` (its standard companion; indexed views and
-  computed-column indexes need both) and `SET XACT_ABORT ON`, the one
-  session-level `SET` v1 issues on connect
-  (`sqlserver_connections.py` `_apply_session_settings`), which makes a
-  run-time error mid-batch roll back instead of half-applying.
+  Measured against `make server` (SQL Server 2022) through the same
+  `go-mssqldb` ADBC driver v1.6.0 dbt installs:
+  `sessionproperty('QUOTED_IDENTIFIER') = 1`, `ANSI_NULLS = 1`,
+  `CONCAT_NULL_YIELDS_NULL = 1`, and `@@OPTIONS & 16384 = 0` — so `XACT_ABORT`
+  is **off**. That reproduces
+  [PR #795](https://github.com/dbt-msft/dbt-sqlserver/pull/795)'s conclusion
+  that the quoting-side setting needs no code change, and it identifies the one
+  that does: `SET XACT_ABORT ON` is the session-level `SET` v1 issues on connect
+  (`sqlserver_connections.py` `_apply_session_settings`,
+  [#718](https://github.com/dbt-msft/dbt-sqlserver/issues/718)), and v1 macro
+  bodies depend on it — `create.sql`, `table_dml_refresh.sql` and `indexes.sql`
+  each say so in comments. Porting those bodies without the `SET` changes what
+  a mid-batch error does.
+
+  There is also nowhere in dbt-core to put it. No per-connection init hook
+  exists: `AdbcEngine::new_connection_with_config` goes straight to
+  `connection::Builder::default().build()`. The one precedent,
+  `apply_duckdb_init_sql`, runs once per *database* on a throwaway connection —
+  which cannot carry a SQL Server session setting, since every connection is
+  its own session. So `dbt-auth/src/sqlserver/init.rs` would be dead code with
+  no call site; the work belongs in `dbt-adapter` (§5.5) next to the hook that
+  executes it. `05` #1 records the quoting side of the same decision.
 
 ## 5.5 — Adapter layer (largest step)
 
