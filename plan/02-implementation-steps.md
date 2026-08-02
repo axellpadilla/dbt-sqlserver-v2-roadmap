@@ -245,12 +245,19 @@ ones from the current `Fabric` arms to triage:
 
 **Crate:** `dbt-loader` — `crates/dbt-loader/src/dbt_macro_assets/dbt-sqlserver/` (new directory)
 
+No registration code is needed anywhere: `internal_package_names()` in
+`load_packages.rs` resolves the package as `format!("dbt-{adapter_type}")`, so
+adding the directory is what wires it up (`00-current-state.md` §6).
+
 - `[ ]` Create `dbt_project.yml`: `name: dbt_sqlserver`, `macro-paths: ["macros"]`
-  (mirror `dbt-fabric/dbt_project.yml`).
-- `[ ]` Create `macros/adapters.sql` (or split into subfiles matching
-  `dbt-fabric/`'s layout — check whether v2 expects one flat file or the same
-  `macros/adapters/`, `macros/materializations/` subdirectory structure v1
-  uses; **do not assume** — inspect `dbt-fabric/`'s actual tree first).
+  (mirror `dbt-fabric/dbt_project.yml`) and `__init__.py` (three lines, exposing
+  `PACKAGE_PATH` — copy Fabric's).
+- `[ ]` Copy `dbt/include/sqlserver/macros/` across with its directory structure
+  intact. v2 keeps v1's layout — `dbt-fabric/` has `macros/adapters/`,
+  `macros/materializations/`, `macros/utils/`, vendored verbatim from
+  `microsoft/dbt-fabric` (42 files). Flat single-file packages exist
+  (`dbt-exasol`, 2 files) but are the exception, and the guide's worked example
+  rather than the norm.
 - `[ ]` Implement the required macro set with `sqlserver__` dispatch prefix:
   `create_schema`, `drop_schema`, `drop_relation`, `rename_relation`,
   `truncate_relation`, `create_table_as`, `create_view_as`, `list_schemas`,

@@ -1,9 +1,31 @@
 # 03 — Macro Porting Map (v1 → v2)
 
 Source tree: `dbt-sqlserver/dbt/include/sqlserver/macros/` (34 files).
-Destination: `dbt-core/crates/dbt-loader/src/dbt_macro_assets/dbt-sqlserver/macros/`
-(exact subdirectory layout TBD — inspect `dbt-fabric/`'s tree first; don't
-assume v1's directory structure carries over 1:1).
+Destination: `dbt-core/crates/dbt-loader/src/dbt_macro_assets/dbt-sqlserver/macros/`.
+
+**The baseline is "vendor the v1 tree", not "port macro by macro"** (established
+2026-08-02 against a real checkout — see `00-current-state.md` §6). v2's
+`dbt-fabric/` package is 42 files copied essentially verbatim from
+`microsoft/dbt-fabric`'s `dbt/include/fabric/macros/` — same directory layout,
+same bodies (`schema.sql` is byte-identical). The package is picked up by name
+(`format!("dbt-{adapter_type}")`), so the mechanical part of Step 5.6 is:
+copy `dbt/include/sqlserver/macros/` across, add `dbt_project.yml`
+(`name: dbt_sqlserver`, `macro-paths: ["macros"]`) and `__init__.py`.
+
+The table below therefore reads as **exceptions to a wholesale copy**, not as a
+per-file decision to make from scratch. What still needs real judgment:
+
+- Which macros v2's Rust layer now owns (catalog/metadata especially — don't
+  ship Jinja that duplicates or contradicts `metadata/sqlserver/mod.rs`).
+- Whether the shared `dbt-adapters` package (115 files) already provides a
+  default that v1's override existed only to work around.
+- Whether each body compiles and behaves under v2's Jinja engine and
+  materialization contract — vendored-verbatim is the starting point, not proof
+  of correctness.
+- The "skip — deferred" rows below: skipping is a real user-visible behavior
+  change (e.g. no `indexes.sql` means index configs are silently ignored, not
+  rejected), and Fabric ships its equivalents. Revisit whether deferring is
+  still the right call now that copying is nearly free.
 
 **Quoting — no longer a porting rewrite** (full rationale in
 `05-open-questions-and-risks.md` #1). This section used to say every
@@ -22,7 +44,9 @@ Three things to carry over rather than re-derive:
   calls** (`adapters/indexes.sql`, `apply_masks.sql`). That is dynamic SQL
   built inside T-SQL, where brackets are the injection-safe idiom — it is not
   a quoting inconsistency and should not be "fixed" during porting. (Those two
-  files are deferred anyway, per `05` #4.)
+  files are deferred anyway, per `05` #4.) For calibration: v2's vendored
+  `dbt-fabric` macros still hand-format brackets freely, so v1's cleanliness
+  here exceeds the upstream bar rather than merely meeting it.
 - **Identifiers interpolated into string literals must be quoted and
   qualified.** `OBJECT_ID('schema.table')` returns `NULL` — not an error — when
   the schema contains a `.` or a `"`, and callers read that as "does not

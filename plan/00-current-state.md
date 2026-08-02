@@ -193,15 +193,46 @@ enumerate the full list once `AdapterType::SqlServer` exists (Step 5.1).
 
 ## 6. Jinja macros — `crates/dbt-loader/src/dbt_macro_assets/`
 
-Only `dbt-fabric/` and `dbt-fabricspark/` exist. No `dbt-sqlserver/` directory.
-`dbt-fabric/` contains (non-exhaustive, found via grep): `macros/adapters/persist_docs.sql`,
-`macros/materializations/snapshots/snapshot.sql`. Read the full `dbt-fabric/`
-tree before starting Step 5.6 — it's the closest existing v2 Jinja reference
-for T-SQL dispatch macros (`fabric__create_table_as`, etc.) and shows the
-current dispatch-prefix convention in this repo.
+**Corrected 2026-08-02** — this section previously reported `dbt-fabric/` as
+holding two macros, from a non-exhaustive grep. Re-checked against a real
+checkout: it holds **42 files**, and they are the v1 Python adapter's Jinja
+tree vendored essentially verbatim.
+
+Packages present: `dbt-adapters` (115 files, the shared base), `dbt-alt`,
+`dbt-bigquery`, `dbt-clickhouse`, `dbt-databricks`, `dbt-duckdb`, `dbt-exasol`,
+`dbt-fabric`, `dbt-fabricspark`, `dbt-postgres`, `dbt-redshift`,
+`dbt-salesforce`, `dbt-snowflake`, `dbt-spark`. No `dbt-sqlserver/`.
+
+How it works (`crates/dbt-loader/src/load_packages.rs`):
+
+- `#[derive(RustEmbed)] #[folder = "src/dbt_macro_assets/"]` compiles the whole
+  directory into the `dbt` binary; packages are synced to disk and loaded per run.
+- `internal_package_names()` (line ~261) selects the package **by name alone**:
+  `format!("dbt-{adapter_type}")` plus the shared `dbt-adapters`. So
+  `AdapterType::SqlServer` automatically looks for `dbt-sqlserver/` — no
+  registration list to edit, just the directory and a `dbt_project.yml`
+  (`name: dbt_sqlserver`, `macro-paths: ["macros"]`) and an `__init__.py`.
+- Package size is a choice, not a contract: `dbt-fabric` ships 42 files,
+  `dbt-exasol` ships 2 (`dbt_project.yml` + `macros/adapters.sql`).
+
+Two consequences for the port, both of which changed the plan
+(`03-macros-porting-map.md`, `05-open-questions-and-risks.md` #1):
+
+1. **The macros are reused, not rewritten.** `dbt-fabric/macros/adapters/schema.sql`
+   in v2 is byte-identical to `microsoft/dbt-fabric`'s
+   `dbt/include/fabric/macros/adapters/schema.sql` (diffed). The
+   `dbt_macro_assets/README.md` says as much: "All adapter macros are currently
+   maintained in dbt-labs/dbt-adapters / databricks/dbt-databricks", with a
+   changelog of vendored upstream commits.
+2. **The vendored bodies still hand-format `[bracket]` identifiers** —
+   `USE [{{ relation.database }}]`, `EXEC('CREATE SCHEMA [{{ ... }}]')`,
+   `{{ "["~column~"]" }}` — in `dbt-fabric/`'s `schema.sql`, `metadata.sql`,
+   `indexes.sql`, `create_table_as.sql`, `unit_test_create_table_as.sql`, even
+   though `AdapterType::Fabric`'s `quote_char` is `'"'`. `quote_char` governs
+   relation rendering, not macro bodies.
 
 The v1 `dbt-sqlserver/dbt/include/sqlserver/macros/` tree (34 `.sql` files) is
-the full porting source — see `03-macros-porting-map.md`.
+the porting source — see `03-macros-porting-map.md`.
 
 ## 7. `dbt init` interactive setup (optional, Step 5.3.1)
 

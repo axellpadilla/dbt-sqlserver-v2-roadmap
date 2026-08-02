@@ -21,6 +21,15 @@ implementation, because they're load-bearing across many files.
    same way. Brackets survive in v1 only inside server-side `QUOTENAME()`
    dynamic SQL, which is deliberate and isn't ported.
 
+   **Scope of "v2 doesn't use brackets": `quote_char` only.** Verified
+   2026-08-02 — v2's vendored `dbt-fabric` macro package still hand-formats
+   `USE [db]`, `EXEC('CREATE SCHEMA [...]')` and `{{ "["~column~"]" }}` in
+   five files, while `AdapterType::Fabric`'s `quote_char` is `'"'`. `quote_char`
+   governs relation rendering; macro bodies are vendored from the v1 Python
+   adapters as-is (`00-current-state.md` §6). So bracket literals in a ported
+   macro body would not violate any upstream convention — v1's #785 cleanup is
+   a quality choice that happens to make the port simpler, not a gate.
+
    **Consequences to carry through the rest of the plan:**
    - `crates/dbt-adapter-core/src/lib.rs` — `quote_char` arm for `SqlServer`
      is `'"'` (Step 5.1, `02-implementation-steps.md`).
