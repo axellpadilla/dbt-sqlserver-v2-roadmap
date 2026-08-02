@@ -31,7 +31,7 @@ An audit of the current codebase found SQL Server further along than a from-scra
 
 Scope for the initial contribution:
 
-- **Identifier quoting**: double-quote (`quote_char = '"'`) with `SET QUOTED_IDENTIFIER ON` enforced as connection-init SQL — matches the existing `Fabric` arm, not v1's `[bracket]` quoting.
+- **Identifier quoting**: double-quote (`quote_char = '"'`), with an embedded `"` doubled when rendering, and `SET QUOTED_IDENTIFIER ON` issued as connection-init SQL — matches the existing `Fabric` arm. dbt-sqlserver v1 standardized on the same double-quote rendering in 1.12 ([#785](https://github.com/dbt-msft/dbt-sqlserver/issues/785)), so the ported macros need no quoting rewrite.
 - **Auth**: plain SQL Server authentication (native login) — the existing module only covers Entra flows, and plain SQL auth is the common on-prem mode. Windows/trusted-connection auth deferred.
 - **Deferred**: dynamic data masking, index/columnstore materialization config, `full_refresh_build: prebuilt`, scalar function materializations, clone support — v1-only extras beyond the guide's minimal required-macro list, each a follow-up once the base adapter merges.
 - **Validation target**: on-prem SQL Server via Docker, with Azure SQL Database as a secondary target for the Entra auth paths.
@@ -60,7 +60,7 @@ Full series (`dbt-sqlserver-next/dbt-core` issues #1–#10, indexed with links a
 
 - Part 1 — `crates/dbt-adapter-core`: register `AdapterType::SqlServer` + `quote_char`.
 - Part 2 — `crates/dbt-schemas`: `SqlServerDbConfig` + `DbConfig::SqlServer`.
-- Part 3 — `crates/dbt-auth`: extend `sqlserver/` module — plain SQL auth, TLS/`encrypt` params (porting from v1's just-merged experimental ADBC backend, which talks to the same driver), `SET QUOTED_IDENTIFIER ON` init SQL.
+- Part 3 — `crates/dbt-auth`: extend `sqlserver/` module — plain SQL auth, TLS/`encrypt` params (porting from v1's experimental ADBC backend, which talks to the same driver), `SET QUOTED_IDENTIFIER ON` init SQL (defensive — v1 measured it already `ON` by default on `go-mssqldb`).
 - Parts 4–7 — `crates/dbt-adapter`: relation quoting & factory, catalog introspection, SQL type mapping & column builder, adapter behavior match arms (mirroring `Fabric` where applicable) — independent of each other, run in any order once Part 1 lands.
 - Part 8 — `crates/dbt-loader`: `dbt_macro_assets/dbt-sqlserver/` macro package, ported from the v1 Jinja macros.
 - Part 9 (optional) — `crates/dbt-init`: interactive profile wizard.

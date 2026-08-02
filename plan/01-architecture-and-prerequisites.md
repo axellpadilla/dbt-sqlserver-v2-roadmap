@@ -42,10 +42,11 @@ Source: https://docs.getdbt.com/guides/adapter-creation-v2 (Steps 1–4)
    [adapter dispatch](https://docs.getdbt.com/reference/dbt-jinja-functions/dispatch).
 3. **SQL Server-specific decisions that are load-bearing across many files**
    (lock these in via `05-open-questions-and-risks.md` before writing code):
-   - **Identifier quoting — DECIDED**: `quote_char = '"'` (double quotes)
-     with `SET QUOTED_IDENTIFIER ON` required as connection-init SQL, not
-     v1's `[bracket]` quoting. Full rationale and downstream consequences:
-     `05-open-questions-and-risks.md` #1.
+   - **Identifier quoting — DECIDED**: `quote_char = '"'` (double quotes),
+     with an embedded `"` doubled when rendering, plus `SET QUOTED_IDENTIFIER
+     ON` as connection-init SQL. v1 now quotes the same way (as of 1.12.0rc2),
+     so macro bodies port verbatim. Full rationale and downstream
+     consequences: `05-open-questions-and-risks.md` #1.
    - **2-part vs 3-part naming**: SQL Server is 3-part (`database.schema.table`),
      unlike Exasol's 2-part example in the guide. Confirm `Fabric`'s
      `include_policy` (`relation_impl.rs:219`, `Policy::new(...)`) already
@@ -67,7 +68,10 @@ Source: https://docs.getdbt.com/guides/adapter-creation-v2 (Steps 1–4)
      `auto_begin` is handled in macros (`{% call statement(..., auto_begin=False) %}`
      patterns from `Fabric`/other adapters) versus v1's transaction handling in
      `sqlserver_connections.py` (not portable — check what replaces it, likely
-     nothing needed since ADBC/the shared task runner manages this now).
+     nothing needed since ADBC/the shared task runner manages this now). One
+     piece *is* portable: v1 issues `SET XACT_ABORT ON` on every connection, so
+     a run-time error partway through a multi-statement batch rolls the batch
+     back instead of leaving it half-applied (`sqlserver_connections.py:401-434`).
    - **Datatype mappings**: string/timestamp/boolean/numeric — v1's
      `sqlserver_column.py` and v2's `Fabric` arms in `sql_types.rs` are both
      useful references; SQL Server and Fabric mostly share `datetime2`, `bit`,

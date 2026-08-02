@@ -17,8 +17,10 @@ Checkbox legend: `[ ]` not started, `[~]` partially done already in this repo,
 - `[ ]` Add a `quote_char` arm: `SqlServer => '"'`. **Decided**
   (`05-open-questions-and-risks.md` #1) — double-quote identifiers, with
   `SET QUOTED_IDENTIFIER ON` enforced via connection-init SQL (see §5.4
-  below), not bracket quoting. Compare against `Fabric`'s arm to confirm it
-  uses the same convention before assuming this is novel.
+  below), not bracket quoting — which v1 also emits as of 1.12, so this is
+  alignment rather than divergence. Compare against `Fabric`'s arm to confirm
+  it uses the same convention before assuming this is novel. The arm alone
+  isn't the whole decision: see the escaping check in §5.5.
 - `[ ]` Run `cargo build -p dbt-adapter-core` — expect it to fail elsewhere
   first (this crate is small), but confirm this specific file compiles.
 
@@ -127,12 +129,16 @@ Checkbox legend: `[ ]` not started, `[~]` partially done already in this repo,
   setting cannot be relied on (it can be forced `OFF` by legacy compatibility
   settings). Without this, every double-quoted identifier the adapter emits
   will error or be misinterpreted as a string literal on a session where it's
-  off. Also evaluate `SET ANSI_NULLS ON` (standard companion setting, some
-  T-SQL constructs — notably indexed views and computed-column indexes —
-  require both `ON`). Check v1's `sqlserver_connections.py`/`sqlserver_adapter.py`
-  for any other session-level `SET` statements it issues on connect, but treat
-  `QUOTED_IDENTIFIER` as the one that's non-negotiable here (v1 doesn't need
-  it because it quotes with brackets, not double quotes).
+  off — v1 measured `USE "db"` as a hard `Msg 102` with it `OFF`. Note this is
+  defense against a misconfigured server, not the common case: v1 verified
+  `sessionproperty('QUOTED_IDENTIFIER') = 1` by default on `go-mssqldb` (the
+  same driver v2 uses), `pyodbc` and `mssql-python`
+  ([PR #795](https://github.com/dbt-msft/dbt-sqlserver/pull/795)). Also
+  evaluate `SET ANSI_NULLS ON` (standard companion setting, some T-SQL
+  constructs — notably indexed views and computed-column indexes — require
+  both `ON`) and `SET XACT_ABORT ON`, which is the one session-level `SET` v1
+  actually issues on connect (`sqlserver_connections.py:401-434`), so a
+  run-time error mid-batch rolls back rather than half-applying.
 
 ## 5.5 — Adapter layer (largest step)
 
@@ -150,6 +156,12 @@ others don't).
   joining the existing `Databricks | Fabric | Postgres | Redshift | Salesforce
   | Bigquery` shared-generic-relation-impl group unless the quoting decision
   from 5.1 forces a separate arm.
+- `[ ]` Check whether the shared rendering path **escapes an embedded delimiter**
+  (`ab"cd` → `"ab""cd"`). If it interpolates verbatim, a SQL Server name
+  containing a `"` breaks or injects, and v2 would reject names v1 accepts —
+  v1 fixed exactly this in `SQLServerAdapter.quote()`/`SQLServerRelation.quoted()`
+  (`05-open-questions-and-risks.md` #1). Decide whether to fix it in the shared
+  impl (affects other adapters) or take a separate `SqlServer` arm.
 - `[ ]` Add `SqlServer` alongside `Fabric` at lines ~270/280/290 (the
   db/schema/identifier string-formatting arms).
 - `[ ]` Add a `SqlServer` constructor mirroring line ~488
@@ -169,6 +181,11 @@ others don't).
   legacy types, has different max VARCHAR/row-size limits than on-prem SQL
   Server's 8060-byte page limit vs Fabric's stated 8000-byte VARCHAR limit at
   line ~884 — verify against SQL Server's actual limits rather than copying).
+  **Match v1's current mappings, not its legacy ones**: as of 1.12.0
+  `dbt_sqlserver_use_native_string_types` defaults `True`, so `STRING` →
+  `VARCHAR(MAX)`, `NVARCHAR` → `NVARCHAR(4000)`, `NCHAR` → `NCHAR(1)`. The
+  `VARCHAR(8000)`/`CHAR(1)` mappings still in `sqlserver_column.py`'s legacy
+  table are deprecated in v1 and should not be ported.
 - `[ ]` Decide `AdapterType::SqlServer => SQLSERVER_METADATA_SQL_TYPE_KEY`
   (mirroring `FABRIC_METADATA_SQL_TYPE_KEY` at ~line 546) — value depends on
   whichever `INFORMATION_SCHEMA`/`sys.*` column your catalog queries select.

@@ -39,8 +39,11 @@ Granular execution ("Part N" issues, one per crate-scoped unit of work) is track
 
 ## dbt-sqlserver (v1 fixes found while planning the v2 port)
 
-- [x] #785 — Inconsistent identifier quoting (`[bracket]` vs `"double quote"`) across a handful of macros
+- [x] #785 — Inconsistent identifier quoting (`[bracket]` vs `"double quote"`) across a handful of macros. Shipped in #795 (v1.12.0rc2); v1 and v2 now render identifiers the same way, so the ported macros need no quoting rewrite.
+- [x] #409 — `Incorrect syntax near '\'` for a domain-qualified schema: the clustered columnstore index name was emitted bare. Pre-existing bug, found and fixed by the same audit (#795).
 - [ ] *(more get added here as they're found/filed)*
+
+Surfaced by that audit, not yet filed: `cci_name` strips `.` and ` ` from generated index names, and the `QUOTENAME()` blocks assume the model's own schema (both listed as non-goals in #795).
 
 ## Deferred / follow-up scope (explicitly out of the v2 initial PR)
 

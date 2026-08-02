@@ -2,7 +2,34 @@
 
 Audited against local checkouts:
 - `dbt-core/` @ commit `f4c63ccca244a2f28456deaef2d91ee539c99d3a` (branch `main`)
-- `dbt-sqlserver/` @ commit `f51fd392f489b69275add5a9940c6380dc9cc9e` (branch `master`, dbt-msft fork)
+- `dbt-sqlserver/` @ commit `1f3332c` (branch `master`, v1.12.0rc2) — re-audited
+  2026-08-02; the original audit was against `f51fd392f489b69275add5a9940c6380dc9cc9e`
+
+### What moved in v1 since the first audit (`f51fd39` → `1f3332c`)
+
+Only the items that change something in this plan:
+
+- **Identifier quoting is no longer a v1↔v2 divergence.**
+  [PR #795](https://github.com/dbt-msft/dbt-sqlserver/pull/795) (commit `8d16c6e`,
+  closes #785 and #409) removed every hand-formatted `[bracket]` identifier from
+  the macros. v1 now emits `"double quotes"` everywhere, escapes an embedded `"`
+  by doubling it, and has a unit test that fails the build if a bracket
+  identifier reappears. Consequences run through `03-macros-porting-map.md`,
+  `05-open-questions-and-risks.md` #1, and §8 below.
+- **Session `SET`s on connect**: v1 issues `SET XACT_ABORT ON` on every
+  connection (`sqlserver_connections.py:401-434`) — the answer to §5.4's "check
+  v1 for other session-level `SET`s" in `02-implementation-steps.md`.
+- **`dbt_sqlserver_use_native_string_types` now defaults `True`** (1.12.0):
+  `STRING` → `VARCHAR(MAX)`, `NVARCHAR` → `NVARCHAR(4000)`, `NCHAR` → `NCHAR(1)`,
+  replacing the legacy `VARCHAR(8000)`/`CHAR(1)` mappings (deprecated). This is
+  the mapping v2's `sql_types.rs` arms should match, not Fabric's.
+- **Catalog reads are `(nolock)`-hinted and temp-relation catalog DDL is kept
+  out of the ambient transaction** (commits `f0afd9f`, `75e9345`, `4ceca61`) —
+  a fix for a real concurrent-incremental deadlock. Relevant to the Rust
+  catalog module (Part 5), which re-implements those reads.
+
+Not plan-affecting: the outbound-FK drop fix (#632), CI/release plumbing, the
+1.12/Python 3.14 compatibility work.
 
 > Note: the official guide refers to a `dbt-xdbc` crate. In this checkout the
 > equivalent crate is named **`dbt-adbc`** (`crates/dbt-adbc/`). Treat every
@@ -22,7 +49,8 @@ pub enum AdapterType {
 No `SqlServer` variant. This is the first thing to add (Step 5.1). `Fabric`
 exists and is the T-SQL sibling — use its `quote_char` arm as the template
 (double quote, same as most warehouses; SQL Server also supports `[bracket]`
-quoting, which is a real behavioral decision — see `05-open-questions-and-risks.md`).
+quoting, but v1 has since standardized on double quotes too, so this is no
+longer a divergence — see `05-open-questions-and-risks.md` #1).
 
 ## 2. ADBC driver registration — `crates/dbt-adbc/src/driver.rs`, `install.rs`
 
@@ -185,17 +213,23 @@ whether `Fabric` is listed there yet as a template to copy for `SqlServer`.
 
 ```
 dbt/adapters/sqlserver/
-  sqlserver_adapter.py       — SQLServerAdapter class (no longer needed; behavior moves to Rust match arms)
+  sqlserver_adapter.py       — SQLServerAdapter class (class shape not needed; behavior moves to Rust match arms).
+                               Exception: its `quote()` override (added by #795) is the escaping rule v2 must
+                               match — `ab"cd` → `"ab""cd"`. See 05 #1.
   sqlserver_auth.py          — auth flows (compare against crates/dbt-auth/src/sqlserver/mod.rs gaps)
   sqlserver_backend.py
-  sqlserver_column.py        — column/type mapping (source for sql_types.rs / column_builder.rs arms)
+  sqlserver_column.py        — column/type mapping (source for sql_types.rs / column_builder.rs arms).
+                               Note the 1.12 default flip to native string types (VARCHAR(MAX)/NVARCHAR(4000)).
   sqlserver_configs.py       — incremental/materialization config (source for adapter_impl.rs arms)
-  sqlserver_connections.py   — connection mgmt (NOT needed — ADBC driver replaces this entirely)
+  sqlserver_connections.py   — connection mgmt (NOT needed — ADBC driver replaces this entirely).
+                               Exception: the session `SET XACT_ABORT ON` it issues on connect (lines 401-434),
+                               which is init-SQL input for Step 5.4.
   sqlserver_constants.py
   sqlserver_credentials.py   — profile fields (source for SqlServerDbConfig struct)
   sqlserver_helpers.py
   sqlserver_mask.py          — data masking support (apply_masks.sql — SQL Server-specific feature, check if in scope)
-  sqlserver_relation.py      — relation/quoting logic (source for relation_impl.rs arm + Policy)
+  sqlserver_relation.py      — relation/quoting logic (source for relation_impl.rs arm + Policy).
+                               Its `quoted()` override escapes embedded delimiters — same rule as `quote()` above.
   sqlserver_runtime.py
   relation_configs/          — relation config parsing (indexes, etc.)
 

@@ -11,26 +11,41 @@ implementation, because they're load-bearing across many files.
    session. Rationale: fits the existing `quote_char() -> char` API in
    `crates/dbt-adapter-core/src/lib.rs` unchanged (no upstream API change to
    negotiate with dbt Labs), and matches the convention most other v2
-   adapters already use. This is a deliberate divergence from v1
-   `dbt-sqlserver`, which quotes with `[bracket]`s throughout (see
-   `03-macros-porting-map.md`'s note on the `USE [{{ relation.database }}]`
-   pattern) — bracket quoting is **not** used in v2.
+   adapters already use.
+
+   **No longer a divergence from v1** (updated 2026-08-02). When this was
+   decided, v1 hand-formatted `[bracket]` identifiers in ~9 macro files.
+   [PR #795](https://github.com/dbt-msft/dbt-sqlserver/pull/795) (v1.12.0rc2,
+   closing #785 — the issue this workspace filed for exactly this reason —
+   and #409) removed all of them, so v1 and v2 now render identifiers the
+   same way. Brackets survive in v1 only inside server-side `QUOTENAME()`
+   dynamic SQL, which is deliberate and isn't ported.
 
    **Consequences to carry through the rest of the plan:**
    - `crates/dbt-adapter-core/src/lib.rs` — `quote_char` arm for `SqlServer`
      is `'"'` (Step 5.1, `02-implementation-steps.md`).
-   - `SET QUOTED_IDENTIFIER ON` must be issued when a connection opens, not
-     assumed from server/session defaults (which can be `OFF` depending on
-     server-level `user options`, ODBC/JDBC driver defaults, or a login's
-     default settings). Implement this as init SQL in
-     `crates/dbt-auth/src/sqlserver/init.rs` (Step 5.4) — this promotes that
-     item from optional to **required**.
-   - `crates/dbt-loader/src/dbt_macro_assets/dbt-sqlserver/` macros ported
-     from v1 (`03-macros-porting-map.md`) must have every `[bracket]`
-     reference rewritten to double-quote/identifier-interpolation form (e.g.
-     `USE [{{ relation.database }}]` → `USE "{{ relation.database }}"` or
-     the adapter's standard quoting helper) — don't port v1's bracket syntax
-     verbatim.
+   - **Escaping is part of the decision, not an afterthought.** An embedded
+     `"` must be doubled: `ab"cd` → `"ab""cd"`. A `"` needs no escaping
+     inside `[brackets]` but does inside double quotes, so choosing the
+     double-quote delimiter without escaping would reject names v1 accepts.
+     v1 implements this in `SQLServerAdapter.quote()` and
+     `SQLServerRelation.quoted()` (neither delegates to `super()`, which
+     wraps verbatim — pre-escaping its input would double-escape if upstream
+     ever starts escaping). **Check whether v2's relation rendering escapes
+     at all** before assuming the `quote_char` arm is sufficient — this is
+     Part 4 (`relation_impl.rs`) work, not just a one-character arm.
+   - `SET QUOTED_IDENTIFIER ON` as connection-init SQL in
+     `crates/dbt-auth/src/sqlserver/init.rs` (Step 5.4). **Belt-and-braces,
+     not a blocker** — v1 verified against a live server that
+     `sessionproperty('QUOTED_IDENTIFIER') = 1` already on all three of its
+     backends, including the `go-mssqldb`-backed ADBC one v2 uses (PR #795's
+     verification notes). Issue it anyway: server-level `user options`, a
+     login default or legacy compatibility settings can force it `OFF`, and
+     the failure mode is total — the same check confirmed `USE "db"` is a
+     hard `Msg 102` with it off.
+   - `crates/dbt-loader/src/dbt_macro_assets/dbt-sqlserver/` macros port from
+     v1 **verbatim** as far as quoting goes — the rewrite this bullet used to
+     mandate is already done upstream (`03-macros-porting-map.md`).
    - Document `QUOTED_IDENTIFIER ON` as a hard prerequisite in the Step 7
      setup guide (`04-testing-and-validation.md`/user-facing docs), since a
      server/login with it forced `OFF` will break every quoted-identifier
@@ -152,7 +167,29 @@ implementation, because they're load-bearing across many files.
   runtime dependency instead. If that init SQL is ever skipped or fails
   silently on a given connection, every subsequent quoted-identifier
   statement breaks — treat the smoke test in item 1's "consequences" list
-  as non-optional, not a nice-to-have.
+  as non-optional, not a nice-to-have. **Partly retired**: v1 measured
+  `QUOTED_IDENTIFIER = 1` as the default on `go-mssqldb`, so the common path
+  is safe; what remains is servers/logins that force it `OFF`.
+
+- **Identifiers built inside string literals — a silent-failure class v1 hit
+  and v2 will too.** `OBJECT_ID('schema.table')`, `sp_rename`, and any
+  catalog predicate comparing against a name are string-literal contexts, not
+  identifier contexts, so quoting rules don't apply automatically and errors
+  don't surface: `OBJECT_ID` returns `NULL` for a schema containing a `.` or
+  a `"`, which every caller reads as "object does not exist". In v1 this
+  silently skipped drop-before-create guards and made dynamic data masking a
+  no-op for affected schemas (fixed in PR #795, 11 sites). The v2 Rust
+  catalog module (Part 5, `metadata/sqlserver/mod.rs`) builds exactly these
+  predicates. Test with a schema containing a `.`, a `"`, a backslash and a
+  space — v1's `TestIndexMacros` uses `…_dom\usr.x"q` as a single covering
+  name.
+
+- **Concurrent catalog reads deadlock without `(nolock)`.** v1 found that
+  read-only catalog lookups and temp-relation catalog DDL participating in
+  the ambient transaction deadlock under concurrent incremental runs (fixed
+  2026-08-01: `f0afd9f`, `75e9345`, `4ceca61`). Whoever writes the Rust
+  catalog queries for Part 5 should carry the same hints/isolation choices
+  over rather than rediscovering this against a live warehouse.
 
 - **ADBC driver maturity** — `adbc_driver_mssql` is CDN-distributed already,
   which is a strong signal it's reasonably mature, but this plan hasn't

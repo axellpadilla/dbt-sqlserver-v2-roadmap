@@ -5,16 +5,36 @@ Destination: `dbt-core/crates/dbt-loader/src/dbt_macro_assets/dbt-sqlserver/macr
 (exact subdirectory layout TBD — inspect `dbt-fabric/`'s tree first; don't
 assume v1's directory structure carries over 1:1).
 
-**Quoting reminder** (full rationale in `05-open-questions-and-risks.md` #1):
-v1 macros hand-format `[bracket]`-quoted identifiers throughout (e.g. `USE
-[{{ relation.database }}];` in `adapters/schema.sql`,
-`relations/table/create.sql`), but v2 is decided as `"double quotes"`
-(`quote_char = '"'`) with `SET QUOTED_IDENTIFIER ON` enforced at
-connection-init. **Every `[...]` literal below must be rewritten to
-double-quote form during porting, not copied verbatim** — preferably by
-routing the identifier through the adapter's standard relation-rendering
-path instead of hand-formatting it, so quoting stays centralized. Cross-check
-against how `Fabric`'s existing v2 macros already render quoted identifiers.
+**Quoting — no longer a porting rewrite** (full rationale in
+`05-open-questions-and-risks.md` #1). This section used to say every
+`[bracket]` literal had to be rewritten during the port. That work has since
+been done upstream in v1:
+[PR #795](https://github.com/dbt-msft/dbt-sqlserver/pull/795) (commit `8d16c6e`,
+v1.12.0rc2) removed every hand-formatted bracket identifier — `USE` now goes
+through `get_use_database_sql()`, and `CREATE SCHEMA`, contract column lists,
+grantees, index/constraint names and generated test-view names all go through
+`adapter.quote()`. v1 and v2 now agree on `"double quotes"`, so **port macro
+bodies verbatim; don't rewrite quoting**.
+
+Three things to carry over rather than re-derive:
+
+- **The only remaining `[brackets]` in v1 are inside server-side `QUOTENAME()`
+  calls** (`adapters/indexes.sql`, `apply_masks.sql`). That is dynamic SQL
+  built inside T-SQL, where brackets are the injection-safe idiom — it is not
+  a quoting inconsistency and should not be "fixed" during porting. (Those two
+  files are deferred anyway, per `05` #4.)
+- **Identifiers interpolated into string literals must be quoted and
+  qualified.** `OBJECT_ID('schema.table')` returns `NULL` — not an error — when
+  the schema contains a `.` or a `"`, and callers read that as "does not
+  exist". In v1 that silently skipped drop-before-create guards (then hit
+  `Msg 2714`) and made `apply_masks` find no columns; `sp_rename` failed the
+  same way. v1 fixed 11 such sites. Any v2 macro *or Rust catalog query* that
+  builds a name inside a string literal inherits this bug — see `05` risks.
+- **Escaping**: v1 doubles an embedded `"` (`ab"cd` → `"ab""cd"`) in both
+  `adapter.quote()` and relation rendering. v2's `quote_char`-based rendering
+  must do the same, or names v1 accepts will break in v2 (`05` #1).
+
+Cross-check against how `Fabric`'s existing v2 macros render quoted identifiers.
 
 ## Required core macros (guide's mandatory list)
 

@@ -1,12 +1,41 @@
 ---
 target_repo: dbt-msft/dbt-sqlserver
 type: bug
-status: open
+status: closed
 url: https://github.com/dbt-msft/dbt-sqlserver/issues/785
+resolved_by: https://github.com/dbt-msft/dbt-sqlserver/pull/795
 related: ../plan/05-open-questions-and-risks.md
 ---
 
 # Inconsistent identifier quoting: a few macros hand-format `[brackets]` while relation rendering already uses `"double quotes"`
+
+> **Resolved 2026-08-01** — shipped in
+> [PR #795](https://github.com/dbt-msft/dbt-sqlserver/pull/795) (commit `8d16c6e`,
+> v1.12.0rc2), which also closed [#409](https://github.com/dbt-msft/dbt-sqlserver/issues/409).
+> Kept here as the filed record; the proposal text below is unedited. What
+> actually landed, against the three proposed changes:
+>
+> 1. **QUOTED_IDENTIFIER for the ADBC backend — no code change needed.**
+>    Verified against a live server: `sessionproperty('QUOTED_IDENTIFIER') = 1`
+>    on all three backends, `go-mssqldb`/ADBC included. (`USE "db"` is a hard
+>    `Msg 102` when it is off, so the concern was real, just already satisfied.)
+>    v2 still issues it as init SQL defensively — `../plan/05-open-questions-and-risks.md` #1.
+> 2. **Bracket literals replaced — done, and it went further than proposed.**
+>    Two things the audit here missed turned out to be required for the change
+>    to be correct, and shipped with it: identifiers interpolated into *string
+>    literals* (`OBJECT_ID('schema.table')`, `sp_rename`) were never quoted, so
+>    a schema containing a `.` or a `"` failed silently — skipped
+>    drop-before-create guards, and dynamic data masks that were never applied;
+>    and an embedded `"` now has to be escaped by doubling, since `[brackets]`
+>    need no such escaping. Both are carried into the v2 plan (`05` #1 and its
+>    risk list).
+> 3. **Regression check — done**, as `tests/unit/adapters/mssql/test_quote.py`
+>    (quoting behavior plus a lint that fails the build if a hand-formatted
+>    bracket identifier reappears).
+>
+> Still open in v1, noted as non-goals in the PR rather than filed: `cci_name`
+> strips `.` and ` ` from generated index names, and the `QUOTENAME()` blocks
+> assume the model's own schema.
 
 ## Summary
 

@@ -43,7 +43,7 @@ order once Parts 1–3 land.
 | 1 | [dbt-sqlserver-next/dbt-core#1](https://github.com/dbt-sqlserver-next/dbt-core/issues/1) — register `AdapterType::SqlServer` | `dbt-adapter-core` | — |
 | 2 | [dbt-sqlserver-next/dbt-core#2](https://github.com/dbt-sqlserver-next/dbt-core/issues/2) — `SqlServerDbConfig` | `dbt-schemas` | #1 |
 | 3 | [dbt-sqlserver-next/dbt-core#3](https://github.com/dbt-sqlserver-next/dbt-core/issues/3) — plain SQL auth, TLS params, `QUOTED_IDENTIFIER` init | `dbt-auth` | #2 |
-| 4 | [dbt-sqlserver-next/dbt-core#4](https://github.com/dbt-sqlserver-next/dbt-core/issues/4) — relation quoting & factory | `dbt-adapter` | #1 |
+| 4 | [dbt-sqlserver-next/dbt-core#4](https://github.com/dbt-sqlserver-next/dbt-core/issues/4) — relation quoting (incl. escaping an embedded `"`) & factory | `dbt-adapter` | #1 |
 | 5 | [dbt-sqlserver-next/dbt-core#5](https://github.com/dbt-sqlserver-next/dbt-core/issues/5) — catalog introspection | `dbt-adapter` | #1 |
 | 6 | [dbt-sqlserver-next/dbt-core#6](https://github.com/dbt-sqlserver-next/dbt-core/issues/6) — SQL type mapping & column builder | `dbt-adapter` | #1 |
 | 7 | [dbt-sqlserver-next/dbt-core#7](https://github.com/dbt-sqlserver-next/dbt-core/issues/7) — `adapter_impl.rs` match arms | `dbt-adapter` | #1 |
