@@ -85,7 +85,7 @@ Qualify the reads with the database instead of relying on connection state:
 
 ```jinja
 {% macro sqlserver__check_schema_exists(information_schema, schema) -%}
-  {% set db = adapter.quote(information_schema.database | replace('"', '')) %}
+  {% set db = adapter.quote(information_schema.database) %}
   {% call statement('check_schema_exists', fetch_result=True, auto_begin=False) -%}
     SELECT count(*) as schema_exist FROM {{ db }}.sys.schemas WHERE name = '{{ schema }}' {{ get_query_options() }}
   {%- endcall %}
