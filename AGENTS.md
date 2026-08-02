@@ -133,6 +133,33 @@ produced them.
 - Skip the emphasis-shouting (`**DECIDED**`, `**do not**`, `**required**`).
   Ordinary prose carries it.
 
+## Comments in code you write into `dbt-core/` or `dbt-sqlserver/`
+
+Those are other people's repos. A comment there is read by contributors who
+don't know this roadmap exists, and it has to survive review by people who
+won't accept a file that argues with itself.
+
+- **Match the density and style of the arms around yours.** If the neighbouring
+  match arms carry a one-line `SAFETY` note, yours gets a one-line note. A
+  five-line justification next to four one-liners reads as a warning sign, not
+  as care.
+- **Don't put the archaeology in their source.** Why v1 chose 127, what a
+  constant was copied from, which alternative was rejected — that belongs in
+  the commit message, the PR body and `plan/`, where the people who need it
+  will look. The code comment states the fact the reader needs to understand
+  the line: `sysname` is `nvarchar(128)`, plus the docs link.
+- **No comparative comments unless the file already makes comparisons.**
+  "Unlike Fabric, which has no `threads` field" explains a decision to someone
+  reading a diff, not to someone reading the file a year later — by then it's
+  just a claim about a neighbour that may have moved. Put the contrast in the
+  PR.
+- **Don't describe behavior that isn't implemented yet.** A comment saying
+  connection init SQL "guarantees" `QUOTED_IDENTIFIER` is false until the part
+  that issues it lands. Write what is true now, the same rule as `plan/`.
+
+When the reasoning is genuinely load-bearing and has nowhere else to go, that's
+a sign it belongs in a test name or an issue, not in a comment.
+
 ## Where things live
 
 - `plan/00`–`05` — audit, architecture, step-by-step checklist, macro map,

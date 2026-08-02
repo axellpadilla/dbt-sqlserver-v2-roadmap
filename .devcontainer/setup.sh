@@ -66,6 +66,30 @@ fi
 export PATH="$cargo_bin:$PATH"
 persist_env 'export PATH="$HOME/.cargo/bin:$PATH"'
 
+# The downloaded-crate cache lives in the bind-mounted workspace, so a container
+# rebuild doesn't re-fetch ~2GB of registry and git dependencies. Only the cache
+# moves: `bin/` and the toolchain stay under $HOME, which the remote user owns.
+#
+# Symlinks rather than CARGO_HOME, because CARGO_HOME would also relocate the
+# rustup-installed binaries this script just put in $cargo_bin.
+#
+# Note this puts the cache under `target/`, so `cargo clean` at the workspace
+# root would delete it — recoverable (the next build re-downloads) but slow.
+# Prefer `cargo clean -p <pkg>`, or re-run this script afterwards.
+cargo_cache="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/dbt-core/target/cache"
+mkdir -p "$cargo_cache/registry" "$cargo_cache/git"
+for d in registry git; do
+  if [ ! -L "$HOME/.cargo/$d" ]; then
+    # A real directory here means a pre-existing cache: fold it in, don't drop it.
+    if [ -d "$HOME/.cargo/$d" ]; then
+      log "Moving existing cargo $d cache into $cargo_cache"
+      cp -a "$HOME/.cargo/$d/." "$cargo_cache/$d/"
+      rm -rf "$HOME/.cargo/$d"
+    fi
+    ln -s "$cargo_cache/$d" "$HOME/.cargo/$d"
+  fi
+done
+
 # Nextest is dbt-core's testing utility of choice (its CONTRIBUTING.md).
 if ! command -v cargo-nextest >/dev/null 2>&1; then
   log "Installing cargo-nextest"

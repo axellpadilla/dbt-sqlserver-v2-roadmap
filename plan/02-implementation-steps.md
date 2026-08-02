@@ -93,7 +93,31 @@ Checkbox legend: `[ ]` not started, `[~]` partially done already in this repo,
   compiler will point at every place that reads `DbConfig` and needs a new
   `SqlServer` case (per the guide's stated behavior for this step).
 
-## 5.3.1 — `dbt init` profile generation (optional, recommended)
+Measured: adding the variant produces **10** `E0004`s, nine of them the
+`impl DbConfig` accessors in `profiles.rs` — `get_unique_field`,
+`get_connection_keys`, `to_yaml_value`, `adapter_type`, `get_database`,
+`get_schema`, `get_threads`, `set_threads`, and the `TargetContext` `try_from`
+— plus `render_with_run_filter`. Nothing else in the workspace regresses: the
+next 45 all belong to `dbt-adapter` (§5.5).
+
+Three field-level calls worth knowing before writing the struct:
+
+- **`get_connection_keys` must say `host`, not v1's `server`.**
+  `to_connection_mapping` filters the *serialized* key names, and
+  `#[serde(alias)]` only affects deserialization. `FabricDbConfig` lists
+  `"server"` while its field serializes as `host`, so Fabric's host never
+  survives the filter — don't copy that. The same reasoning keeps `PWD` and
+  `client_secret` off the list.
+- **`threads` belongs on the struct**, even though `FabricDbConfig` has no such
+  field and `get_threads` returns `None` for Fabric. v1 inherits `threads` from
+  `Credentials`, so a ported profile setting it would otherwise be silently
+  ignored.
+- **`authentication` has no default here.** v1 defaults to `sql`, but the value
+  that actually governs connection setup is `dbt-auth` `parse_auth`'s
+  `DEFAULT_AUTH`, which is Entra service-principal today. §5.4 decides it;
+  until then `TargetContext` leaves it empty rather than asserting an answer.
+
+## 5.3.1 — `dbt init` profile generation (recommended; compiles-or-not, not truly optional)
 
 **Crate:** `dbt-init` — `crates/dbt-init/`
 
@@ -105,9 +129,14 @@ Checkbox legend: `[ ]` not started, `[~]` partially done already in this repo,
   shape) and `postgres_config.rs` per the guide's "minimal reference" note.
 - `[ ]` Export from `src/adapter_config/mod.rs`.
 - `[ ]` Add match arm in `create_profile_for_adapter()` in `profile_setup.rs`.
-- Defer this sub-step if time-constrained — it's explicitly optional in the
-  guide and doesn't block `dbt build` from working via a hand-written
-  `profiles.yml`.
+- The *interactive setup* is deferrable — the guide calls it optional, and a
+  hand-written `profiles.yml` gets `dbt build` working without it. The match
+  arm is not: `create_profile_for_adapter` matches `AdapterType` exhaustively
+  with no `_`, so `dbt-init` stops compiling the moment §5.1 lands. Deferring
+  means landing `AdapterType::SqlServer => todo!("SqlServer")` there and
+  filling it in later, not skipping the file. The compiler enforces this, so
+  it can't be silently missed — but it does mean the workspace can't build
+  green until someone touches `dbt-init`.
 
 ## 5.4 — Authentication
 
