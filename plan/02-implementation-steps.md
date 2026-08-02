@@ -186,9 +186,14 @@ others don't).
   `VARCHAR(MAX)`, `NVARCHAR` → `NVARCHAR(4000)`, `NCHAR` → `NCHAR(1)`. The
   `VARCHAR(8000)`/`CHAR(1)` mappings still in `sqlserver_column.py`'s legacy
   table are deprecated in v1 and should not be ported.
-- `[ ]` Decide `AdapterType::SqlServer => SQLSERVER_METADATA_SQL_TYPE_KEY`
-  (mirroring `FABRIC_METADATA_SQL_TYPE_KEY` at ~line 546) — value depends on
-  whichever `INFORMATION_SCHEMA`/`sys.*` column your catalog queries select.
+- `[x]` **Already answered** — the metadata type key lives in
+  `crates/dbt-adapter-sql/src/types/mod.rs:1816`, and v2 already defines
+  `const SQLSERVER_KEYS: [&str; 2] = ["SQLSERVER:type", "type_text"]`, which
+  `AdapterType::Fabric` maps to at line 1831. Fabric reaches it because it
+  rides the same `adbc_driver_mssql`/`go-mssqldb` driver that emits
+  `SQLSERVER:type` in the Arrow field metadata. So the SqlServer arm is
+  `AdapterType::SqlServer => &SQLSERVER_KEYS` — nothing to derive from your
+  catalog queries, and note it's in `dbt-adapter-sql`, not `dbt-adapter`.
 - `[ ]` Review the two `unimplemented!`/error arms (INTERVAL, ARRAY not
   supported — lines ~920/929) — SQL Server also lacks native ARRAY and
   INTERVAL types, so these error arms are very likely directly reusable

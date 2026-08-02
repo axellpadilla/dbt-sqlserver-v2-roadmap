@@ -34,6 +34,17 @@ Source: https://docs.getdbt.com/guides/adapter-creation-v2 (Steps 1–4)
 | 6 | `dbt-loader` | `crates/dbt-loader/` | New `dbt_macro_assets/dbt-sqlserver/` package: `dbt_project.yml` + macros |
 | — | `dbt-init` (optional) | `crates/dbt-init/` | Interactive `dbt init` profile prompts |
 
+Three more crates carry `AdapterType::Fabric` arms and were missing from this
+table (found 2026-08-02 by `grep -rl "AdapterType::Fabric" crates/`). Each is
+small, but each is a compile error once the enum variant lands, so budget for
+them rather than being surprised mid-Part-1:
+
+| Crate | Site | What it decides |
+|---|---|---|
+| `dbt-adapter-sql` | `src/types/mod.rs:1831`, `src/statements.rs:23` | Arrow metadata type-key lookup, and a per-adapter statement-handling flag |
+| `dbt-df-providers` | `src/seed_io.rs:233` | Seed CSV column-name inference strategy (case handling) — SQL Server's default collation is case-insensitive, so pick deliberately rather than copying Fabric |
+| `dbt-tasks-core` | `src/run_cache_lifecycle.rs:395` | `adapter_supports_dbt_state` (a test assertion today) |
+
 ## Required knowledge before starting
 
 1. **Rust fundamentals** — read enums, `match` exhaustiveness, and how to read

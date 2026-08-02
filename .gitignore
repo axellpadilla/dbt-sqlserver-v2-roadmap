@@ -1,7 +1,9 @@
 # Nested independent git checkouts — tracked in their own repos/remotes,
 # not as submodules. See plan/README.md for why.
-/dbt-core/
-/dbt-sqlserver/
+# No trailing slash: these are also valid as symlinks (a checkout kept
+# elsewhere and linked in), and a trailing slash matches directories only.
+/dbt-core
+/dbt-sqlserver
 
 # OS / editor cruft
 .DS_Store

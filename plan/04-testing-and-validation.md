@@ -55,9 +55,12 @@ seeds and models as needed for SQL Server type/syntax differences (e.g.
 
 ### SQL Server-specific smoke test matrix (beyond the guide's generic list)
 
-- [ ] `dbt seed` — CSV load path; verify against the `seed_io.rs` reference
-  found during the audit (`00-current-state.md` §6) before assuming Jinja-only
-  seed macros are sufficient.
+- [ ] `dbt seed` — CSV load path. Seed loading is Rust, not Jinja:
+  `crates/dbt-df-providers/src/seed_io.rs` (380 lines) matches on
+  `AdapterType` at line ~233 to pick a column-name inference strategy
+  (Fabric groups with Bigquery/Databricks/Spark; Snowflake uppercases).
+  Choose SQL Server's arm deliberately — its default collation is
+  case-insensitive — and test round-tripping mixed-case seed headers.
 - [ ] `dbt run` — table, view, incremental (all supported strategies:
   `append`, `delete+insert`, `merge`, `microbatch` per the `Fabric` parity
   assumption in `02-implementation-steps.md`).
@@ -69,9 +72,14 @@ seeds and models as needed for SQL Server type/syntax differences (e.g.
   since re-running `dbt build` shouldn't fail on existing schemas).
 - [ ] Identifier quoting edge cases under the decided double-quote scheme
   (`05-open-questions-and-risks.md` #1): reserved words, mixed-case
-  identifiers, and a session where `QUOTED_IDENTIFIER` defaults to `OFF`
-  (confirming the init SQL actually overrides it) — this is the highest-risk
-  area since it's a deliberate v1/v2 behavior divergence.
+  identifiers, a name containing a `"` (must render doubled, `"ab""cd"`), a
+  schema containing a `.` or a backslash (the string-literal and index-name
+  failures v1 fixed in #795 — `dbt-sqlserver`'s `TestIndexMacros` covers all
+  of these in one schema name, `…_dom\usr.x"q`, worth copying), and a session
+  where `QUOTED_IDENTIFIER` defaults to `OFF` (confirming the init SQL
+  overrides it). No longer a v1/v2 divergence — v1 renders identifiers the
+  same way as of 1.12 — but still the highest-risk area, because the failures
+  are silent rather than loud.
 - [ ] Each implemented auth mode individually: service principal, AD
   password, environment credential, and plain SQL auth — one `profiles.yml`
   target per mode, each run through a full `dbt build`.
