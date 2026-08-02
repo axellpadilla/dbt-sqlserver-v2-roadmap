@@ -18,6 +18,9 @@ repo holds the plan, decision log, and local dev tooling used to get there.
   (e.g. proposals for `dbt-msft/dbt-sqlserver`) before they're filed, so they
   get reviewed here first.
 - `Makefile` — clones the two repos this plan is written against.
+- [`AGENTS.md`](AGENTS.md) — conventions for anyone, human or agent, editing
+  the plan: verify claims against a checkout, check live issue/PR state before
+  trusting a decision, and bring ambiguous calls back to a maintainer.
 
 ## Getting started
 
