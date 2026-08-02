@@ -98,7 +98,17 @@ Measured: adding the variant produces **10** `E0004`s, nine of them the
 `get_connection_keys`, `to_yaml_value`, `adapter_type`, `get_database`,
 `get_schema`, `get_threads`, `set_threads`, and the `TargetContext` `try_from`
 — plus `render_with_run_filter`. Nothing else in the workspace regresses: the
-next 45 all belong to `dbt-adapter` (§5.5).
+next 46 are §5.5's, all but one in `dbt-adapter`.
+
+The odd one out is `dbt-df-providers` `seed_io.rs`
+`infer_seed_column_name_strategy`, which owns no §5.5 file and is claimed by
+no issue in the Part series. It picks how a seed CSV header becomes a column
+name: `Verbatim`, `Lowercase` or `Uppercase`, keyed on `(quote_columns,
+adapter_type)`. `Fabric` sits with `Bigquery | Databricks | Spark` on
+`Verbatim`, which is what SQL Server does with an unquoted column name — it
+stores the case it was given — so `Lowercase` would silently rename every
+mixed-case seed header. Choose it deliberately; `05`'s collation risk lists it
+alongside the other three case-sensitive sites.
 
 Three field-level calls worth knowing before writing the struct:
 

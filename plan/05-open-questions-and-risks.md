@@ -166,6 +166,31 @@ rather than per-file. All five are locked; raise them with dbt Labs in
   `metadata/fabric/mod.rs` against a real SQL Server instance before reusing
   it, not against Fabric's behavior.
 
+- **Nothing in dbt-core knows what a collation is.** Every case decision in the
+  Rust is a per-`AdapterType` constant, and SQL Server is the only supported
+  adapter whose case behavior is configurable per database, per column and per
+  comparison. A name that folds to one value in Rust can be two distinct
+  objects on a `_CS_` server, and vice versa. Four sites carry the assumption;
+  each needs a deliberate choice and a test on a case-sensitive server:
+
+  - `relation_impl.rs` `normalize_component` — SqlServer lands on the
+    `_ => to_lowercase()` arm, so `semantic_fqn` merges `MODEL` and `model`.
+    Correct under the default `_CI_` collation, wrong under `_CS_`. Reachable
+    only when a project turns `quoting` off, since
+    `DEFAULT_RESOLVED_QUOTING` is all-true and the quoted path skips the fold.
+    v1 has the same defect and knows it: `TestCachingUppercaseModel` is
+    `@pytest.mark.skip`ped with "Fails because of case sensitivity. MODEL is
+    coereced to model which fails the test as it sees conflicting naming."
+    Marked `TODO` in the Part 4 arm.
+  - `relation_impl.rs` `get_canonical_fqn` — pass-through, correct either way.
+  - `dbt-df-providers` `seed_io.rs` `infer_seed_column_name_strategy` — see the
+    census below; `Verbatim` is the arm that matches how SQL Server stores an
+    unquoted column name, and `Lowercase` would silently rename seed headers.
+  - Catalog introspection (Part 5) compares names as strings. v1 forces the
+    issue in `columns.sql` with `c.name collate database_default as
+    column_name`; the ported queries need the same or an explicit reason not
+    to.
+
 - **Identifiers built inside string literals fail silently.**
   `OBJECT_ID('schema.table')`, `sp_rename`, and catalog predicates comparing
   against a name are string-literal contexts, so identifier quoting doesn't
