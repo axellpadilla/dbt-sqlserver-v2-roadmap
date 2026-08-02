@@ -30,6 +30,24 @@ make status  # check both repos' git status
 make update  # pull latest on both
 ```
 
+`dbt-core` is cloned from [the fork](https://github.com/dbt-sqlserver-next/dbt-core)
+on the `sqlserver-v2-port` integration branch, with `dbt-labs/dbt-core` added as
+the `upstream` remote — see `plan/README.md`, "Branching strategy". Override
+with `DBT_CORE_URL` / `DBT_CORE_BRANCH`, and pass
+`CLONE_ARGS=--filter=blob:none` for a blobless clone.
+
+### Devcontainer
+
+`.devcontainer/` builds one container for both sides of the port: the Rust
+toolchain, `cargo-nextest`, `z3` and `pkg-config` for dbt-core, and Python,
+`uv`, the Microsoft ODBC driver and `sqlcmd` for dbt-sqlserver, with
+docker-in-docker so `make server` can start SQL Server on `:1433`.
+
+On creation it runs `make setup` (blobless), so both checkouts land inside the
+workspace with `dbt-core` on the `sqlserver-v2-port` branch, and sets up
+dbt-sqlserver's virtualenv and ADBC driver. Nothing to do after the container
+comes up but `make server`.
+
 Both `dbt-core/` and `dbt-sqlserver/` are independent git checkouts with
 their own remotes and history — they're `.gitignore`d here on purpose, not
 submodules. See `plan/README.md` for why.

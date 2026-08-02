@@ -1,6 +1,17 @@
-DBT_CORE_URL      ?= https://github.com/dbt-labs/dbt-core.git
+# dbt-core is cloned from the fork, on the integration branch the port lands on
+# (plan/README.md, "Branching strategy"). dbt-labs/dbt-core is added as the
+# `upstream` remote so the branch can be rebased on it.
+DBT_CORE_URL             ?= https://github.com/dbt-sqlserver-next/dbt-core.git
+DBT_CORE_BRANCH          ?= sqlserver-v2-port
+DBT_CORE_UPSTREAM_URL    ?= https://github.com/dbt-labs/dbt-core.git
+DBT_CORE_UPSTREAM_BRANCH ?= main
+
 DBT_SQLSERVER_URL ?= https://github.com/dbt-msft/dbt-sqlserver.git
 DBT_SQLSERVER_DIR := dbt-sqlserver
+
+# Blobless by default: blobs are fetched on demand instead of the full history,
+# which is most of the download for dbt-core. Pass CLONE_ARGS= for a full clone.
+CLONE_ARGS ?= --filter=blob:none
 
 .PHONY: setup clone-dbt-core clone-dbt-sqlserver update status help \
         server server-stop server-logs test-env
@@ -8,13 +19,18 @@ DBT_SQLSERVER_DIR := dbt-sqlserver
 help:
 	@echo "Targets:"
 	@echo "  make setup              Clone dbt-core and dbt-sqlserver if missing"
-	@echo "  make clone-dbt-core     Clone dbt-labs/dbt-core into ./dbt-core"
+	@echo "  make clone-dbt-core     Clone the fork's $(DBT_CORE_BRANCH) branch into ./dbt-core,"
+	@echo "                          with dbt-labs/dbt-core as the 'upstream' remote"
 	@echo "  make clone-dbt-sqlserver  Clone dbt-msft/dbt-sqlserver into ./dbt-sqlserver"
 	@echo "  make update             git pull both repos on their current branch"
 	@echo "  make status             git status for both repos"
 	@echo ""
-	@echo "Override remotes, e.g. to point at your own fork:"
+	@echo "Override remotes and branch, e.g. to point at your own fork:"
 	@echo "  make setup DBT_SQLSERVER_URL=https://github.com/<you>/dbt-sqlserver.git"
+	@echo "  make setup DBT_CORE_URL=https://github.com/<you>/dbt-core.git DBT_CORE_BRANCH=main"
+	@echo ""
+	@echo "Clones are blobless by default; for full history:"
+	@echo "  make setup CLONE_ARGS="
 	@echo ""
 	@echo "Local SQL Server test server (reuses dbt-sqlserver's docker-compose):"
 	@echo "  make test-env           Create dbt-sqlserver/test.env from its sample (once)"
@@ -25,17 +41,19 @@ help:
 setup: clone-dbt-core clone-dbt-sqlserver
 
 clone-dbt-core:
-	@if [ -d dbt-core/.git ]; then \
+	@if [ -e dbt-core ]; then \
 		echo "dbt-core/ already present, skipping clone"; \
 	else \
-		git clone $(DBT_CORE_URL) dbt-core; \
+		git clone $(CLONE_ARGS) --branch $(DBT_CORE_BRANCH) $(DBT_CORE_URL) dbt-core; \
+		git -C dbt-core remote add upstream $(DBT_CORE_UPSTREAM_URL); \
+		git -C dbt-core fetch $(CLONE_ARGS) --no-tags upstream $(DBT_CORE_UPSTREAM_BRANCH); \
 	fi
 
 clone-dbt-sqlserver:
-	@if [ -d dbt-sqlserver/.git ]; then \
+	@if [ -e dbt-sqlserver ]; then \
 		echo "dbt-sqlserver/ already present, skipping clone"; \
 	else \
-		git clone $(DBT_SQLSERVER_URL) dbt-sqlserver; \
+		git clone $(CLONE_ARGS) $(DBT_SQLSERVER_URL) dbt-sqlserver; \
 	fi
 
 update:

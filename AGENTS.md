@@ -12,8 +12,14 @@ claim about one of two codebases that are actively changing:
 - `dbt-msft/dbt-sqlserver` — the v1 adapter being ported, cloned to `dbt-sqlserver/`
 
 `make setup` clones both (they're gitignored, not submodules — `plan/README.md`
-explains why). A checkout kept elsewhere and symlinked in works too; the ignore
-rules cover both forms.
+explains why). `dbt-core` comes from the fork on the `sqlserver-v2-port`
+integration branch, with `dbt-labs/dbt-core` as the `upstream` remote, so a
+checkout is on the branch the port lands on rather than on upstream `main`.
+
+`.devcontainer/` provides both toolchains in one container — Rust plus
+`cargo-nextest`, `z3` and `pkg-config` for dbt-core; Python, `uv` and the
+Microsoft ODBC driver for dbt-sqlserver; docker-in-docker for `make server` —
+and runs `make setup` on creation, so both checkouts are in the workspace.
 
 That framing drives everything below: **the main failure mode here is not a bug,
 it's a confident sentence that stopped being true.**
