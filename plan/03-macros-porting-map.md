@@ -82,7 +82,7 @@ deprecations; it does not touch macro bodies.
 | `create_table_as` | `relations/table/create.sql` (`sqlserver__create_table_as`) | Non-trivial: builds a temp view first. Port only the `heap_then_index` (default) path — the `full_refresh_build: prebuilt` optimization is **deferred** per `05-open-questions-and-risks.md` #4 |
 | `create_view_as` | `relations/views/create.sql` | |
 | `list_schemas` | `adapters/metadata.sql` (verify exact macro name) | Cross-check against `crates/dbt-adapter/src/metadata/sqlserver/mod.rs` (Rust) — v2 often does catalog listing in Rust, not Jinja; don't duplicate logic in both places |
-| `check_schema_exists` | `adapters/schema.sql` or `metadata.sql` | |
+| `check_schema_exists` | `adapters/schema.sql` or `metadata.sql` | `AdapterImpl::check_schema_exists` (`adapter/mod.rs`) is native Rust in v2 and does not dispatch to a macro. `dbt-fabric` ships `fabric__check_schema_exists` anyway — check whether it is reachable before copying v1's, which is one of the two macros in `issues/v1-use-database-state-vs-unqualified-catalog-reads.md`. Same question for `get_relation_last_modified` vs `freshness_inner` |
 | `information_schema_name` | `adapters/metadata.sql` | SQL Server: typically `INFORMATION_SCHEMA` per-database, unlike Exasol's `sys` — verify exact v1 value |
 | `current_timestamp` | `utils/timestamps.sql` | T-SQL: `GETDATE()` / `SYSDATETIME()` — check v1's exact choice |
 | `get_columns_in_relation` | `adapters/columns.sql` | |
