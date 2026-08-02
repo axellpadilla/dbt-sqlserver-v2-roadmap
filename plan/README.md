@@ -14,10 +14,22 @@ This plan follows the official contribution guide:
   The macro-facing parts are summarized in `03-macros-porting-map.md`.
 - **Fusion package compatibility**: https://docs.getdbt.com/guides/fusion-package-compat —
   the maintainer-side flow for dbt packages (`dbt-autofix`, `dbtf build`,
-  `require-dbt-version: [">=1.10.0,<3.0.0"]`). Not the adapter port itself, but
-  it's what dbt-sqlserver users will need from every package in their project,
-  and the same `require-dbt-version` convention applies to the macro package
-  this port ships.
+  `require-dbt-version: [">=1.10.0,<3.0.0"]`). Relevant because dbt-sqlserver
+  users need it from every package in their project, not because it applies to
+  this port.
+
+  **Packages and adapters are distributed differently in v2, and the word
+  "package" invites the wrong assumption.** Hub packages ship independently, as
+  they always have — no dbt-core PR. Adapters don't: the adapter-creation guide
+  is explicit that there's "no `setup.py`, no PyPI release — dbt Labs ships your
+  adapter once the PR is merged." That follows from the code, where adapter
+  behavior is exhaustive `match adapter_type()` arms across nine crates plus a
+  RustEmbed'd macro package, all compiled into the binary. The one dynamic
+  loading boundary in dbt-core is `crates/dbt-adbc`, which loads driver
+  `.so`/`.dylib` files — so an adapter's *connectivity* is pluggable (SQL
+  Server's driver already ships from the CDN, `00-current-state.md` §2) while
+  its *semantics* are not. In v1 the adapter was itself a pip package, which is
+  where the confusion comes from.
 - **Target repo (upstream)**: https://github.com/dbt-labs/dbt-core (local checkout: `dbt-core/`)
 - **Working fork + integration branch**: https://github.com/dbt-sqlserver-next/dbt-core,
   branch `sqlserver-v2-port`. All contributor work lands here first, not
