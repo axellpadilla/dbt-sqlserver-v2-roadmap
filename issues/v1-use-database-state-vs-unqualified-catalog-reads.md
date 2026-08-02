@@ -81,23 +81,48 @@ fails quietly.
 
 ## Fix
 
-Add the `USE` the other 26 sites already emit:
+Qualify the reads with the database instead of relying on connection state:
 
 ```jinja
 {% macro sqlserver__check_schema_exists(information_schema, schema) -%}
+  {% set db = adapter.quote(information_schema.database | replace('"', '')) %}
   {% call statement('check_schema_exists', fetch_result=True, auto_begin=False) -%}
-    {{ get_use_database_sql(information_schema.database) }}
-    SELECT count(*) as schema_exist FROM sys.schemas WHERE name = '{{ schema }}' {{ get_query_options() }}
+    SELECT count(*) as schema_exist FROM {{ db }}.sys.schemas WHERE name = '{{ schema }}' {{ get_query_options() }}
   {%- endcall %}
 ```
 
-and the same in `sqlserver__get_relation_last_modified`.
+and the same prefix on the `sys.objects` / `sys.schemas` reads in
+`sqlserver__get_relation_last_modified`. `calculate_freshness_from_metadata_batch`
+groups relations by `information_schema` before calling it, so one invocation is
+always one database.
 
-Three-part qualification (`[db].sys.schemas`) is the alternative, and is what the
-v2 port uses, but it is not a migration path for the adapter as a whole:
-`CREATE VIEW`, `CREATE PROCEDURE` and `CREATE SCHEMA` reject a database prefix
-outright (errors 166 and 102, measured), so `USE` stays load-bearing on those
-paths regardless. Adding both mechanisms would be worse than keeping one.
+Emitting `{{ get_use_database_sql(information_schema.database) }}`, as the other
+26 sites do, also gives the right answer. It is the weaker fix here:
+`check_schema_exists` runs with `auto_begin=False` and is otherwise a pure read,
+and adding `USE` makes it mutate the connection for whatever runs next on that
+thread — the same mechanism that caused this bug.
+
+### Scope
+
+`USE` cannot be removed from the adapter. `CREATE VIEW` and `CREATE PROCEDURE`
+reject a database prefix (error 166), `CREATE SCHEMA` likewise (error 102), and
+`EXEC('...')` bodies resolve in the current database — measured against SQL
+Server 2022. The two mechanisms therefore coexist whatever is done here; the v2
+port is in the same position, with three-part catalog reads in Rust and a copy of
+this macro package emitting `USE` on the same connection.
+
+What is worth doing is applying one rule consistently — three-part wherever the
+statement accepts it, `USE` only where it does not. `CREATE TABLE`, `SELECT INTO`,
+`INSERT`, `ALTER TABLE`, `DROP TABLE`, `TRUNCATE TABLE`, `CREATE INDEX` and
+`sp_rename` all accept a database prefix, so most of the 26 sites could move. That
+is a larger change than this bug needs and belongs in its own PR; migrating the
+reads first removes the whole failure class, because a forgotten `USE` stops being
+representable once the database is in the name.
+
+One thing to check before a wider migration: cross-database three-part references
+are not supported on Azure SQL Database. Cross-database support is currently
+exercised only by `tests/functional/adapter/mssql/`, so this may already be out of
+scope, but it has not been verified here.
 
 ## Audit
 
