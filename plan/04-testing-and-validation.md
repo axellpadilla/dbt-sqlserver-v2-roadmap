@@ -63,7 +63,8 @@ the package's, not the adapter's. `dbt_utils`, `audit_helper`,
 
 - [ ] `dbt seed` — CSV load path. Seed loading is Rust, not Jinja:
   `crates/dbt-df-providers/src/seed_io.rs` (380 lines) matches on
-  `AdapterType` at line ~233 to pick a column-name inference strategy
+  `AdapterType` in `infer_seed_column_name_strategy` to pick a column-name
+  inference strategy
   (Fabric groups with Bigquery/Databricks/Spark; Snowflake uppercases).
   Choose SQL Server's arm deliberately — its default collation is
   case-insensitive — and test round-tripping mixed-case seed headers.

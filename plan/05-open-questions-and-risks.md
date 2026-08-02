@@ -42,6 +42,16 @@ rather than per-file. All five are locked; raise them with dbt Labs in
      server-level `user options`, a login default or legacy compatibility
      settings can force it `OFF`, and the failure is total (`USE "db"` is a
      hard `Msg 102`).
+
+     A client default can force it `OFF` too, which isn't hypothetical:
+     `sqlcmd` from `mssql-tools18` connects with
+     `sessionproperty('QUOTED_IDENTIFIER') = 0` unless `-I` is passed, and a
+     `CREATE TABLE "..."` on that session fails with `Msg 102`. Measured
+     against `make server` (SQL Server 2022, 16.0.4265.3) with
+     `sys.configurations` `user options` at 0, so the server isn't the source.
+     The `go-mssqldb` driver v2 uses is not `sqlcmd` and does default it `ON`,
+     but it means the failure mode is one connection library away rather than
+     confined to misconfigured servers.
    - Document `QUOTED_IDENTIFIER ON` as a prerequisite in the Step 7 setup
      guide, and smoke-test a session where it defaults to `OFF` to confirm the
      init SQL overrides it (`04-testing-and-validation.md`).
@@ -63,7 +73,8 @@ rather than per-file. All five are locked; raise them with dbt Labs in
      against v1's `sqlserver_credentials.py`/`sqlserver_auth.py`.
    - It sets no `fedauth`; credentials go in the userinfo portion of the
      `sqlserver://` URI, as v1's ADBC backend does
-     (`sqlserver_backend.py:386` — `userinfo = f"{uid}:{pwd}"`, URL-encoded).
+     (`sqlserver_backend.py` `build_adbc_connection_uri` —
+     `userinfo = f"{uid}:{pwd}"`, URL-encoded).
    - Add a unit test mirroring the existing `sqlserver/mod.rs` style
      (`test_service_principal_with_tenant_id` → `test_plain_sql_auth`).
    - Reflect it in `02-implementation-steps.md` §5.4 and `SqlServerDbConfig`
@@ -76,11 +87,12 @@ rather than per-file. All five are locked; raise them with dbt Labs in
    optional.
 
    Nothing to design: v1's ADBC backend
-   (`sqlserver_backend.py:367-401`, [PR #783](https://github.com/dbt-msft/dbt-sqlserver/pull/783))
+   (`sqlserver_backend.py` `build_adbc_connection_uri`,
+   [PR #783](https://github.com/dbt-msft/dbt-sqlserver/pull/783))
    builds the same parameter set against the same driver — `encrypt`,
    `TrustServerCertificate`, `connection timeout` — with defaults
    `encrypt=True`, `trust_cert=False`, `login_timeout=0`
-   (`sqlserver_credentials.py:55-59`). Port those values (`00-current-state.md`
+   (`SQLServerCredentials`). Port those values (`00-current-state.md`
    §3, `02-implementation-steps.md` §5.4).
 
 4. **Feature scope: v1's SQL-Server-specific extras are deferred.** Out of the
@@ -109,8 +121,8 @@ rather than per-file. All five are locked; raise them with dbt Labs in
 
    - Shipping it would also mean implementing the Rust side.
      `adapter.parse_index` exists as a Jinja callable
-     (`crates/dbt-adapter/src/adapter/mod.rs:3260`) but resolves to
-     `adapter_impl.rs:4406`, which is `unimplemented!("parse_index")` for
+     (`crates/dbt-adapter/src/adapter/mod.rs` `parse_index`) but resolves to
+     `adapter_impl.rs` `parse_index`, which is `unimplemented!("parse_index")` for
      *every* adapter — Postgres included. Its doc comment points at
      `PostgresAdapter.parse_index` in dbt-adapters, so it's a stub awaiting an
      implementation, and SQL Server can't be the first without doing that work.

@@ -40,9 +40,9 @@ mid-Part-1 (`grep -rl "AdapterType::Fabric" crates/` regenerates this list):
 
 | Crate | Site | What it decides |
 |---|---|---|
-| `dbt-adapter-sql` | `src/types/mod.rs:1831`, `src/statements.rs:23` | Arrow metadata type-key lookup, and a per-adapter statement-handling flag |
-| `dbt-df-providers` | `src/seed_io.rs:233` | Seed CSV column-name inference strategy (case handling) — SQL Server's default collation is case-insensitive, so pick deliberately rather than copying Fabric |
-| `dbt-tasks-core` | `src/run_cache_lifecycle.rs:395` | `adapter_supports_dbt_state` (a test assertion today) |
+| `dbt-adapter-sql` | `src/types/mod.rs` `metadata_type_candidate_keys`, `src/statements.rs` `is_update_statement` | Arrow metadata type-key lookup, and a per-adapter statement-handling flag |
+| `dbt-df-providers` | `src/seed_io.rs` `infer_seed_column_name_strategy` | Seed CSV column-name inference strategy (case handling) — SQL Server's default collation is case-insensitive, so pick deliberately rather than copying Fabric |
+| `dbt-tasks-core` | `src/run_cache_lifecycle.rs` | `adapter_supports_dbt_state` (a test assertion today) |
 
 ## Required knowledge before starting
 
@@ -58,10 +58,10 @@ mid-Part-1 (`grep -rl "AdapterType::Fabric" crates/` regenerates this list):
      are. Rationale and consequences: `05` #1.
    - **2-part vs 3-part naming**: SQL Server is 3-part
      (`database.schema.table`), unlike Exasol's 2-part example in the guide.
-     Already handled: `include_policy` (`relation_impl.rs:37`) special-cases
+     Already handled: `include_policy` (`relation_impl.rs`) special-cases
      only DuckDB, ClickHouse, Exasol and Salesforce, and everything else —
      Fabric included — falls through to `Policy::trues()`, which is 3-part. No
-     arm needed there. `get_database` (line 219) is separate: it lists the
+     arm needed there. `get_database` is separate: it lists the
      adapters for which a missing database is an error, and `SqlServer` belongs
      in that list alongside `Fabric`.
    - **Case sensitivity**: default SQL Server collations are
@@ -87,7 +87,8 @@ mid-Part-1 (`grep -rl "AdapterType::Fabric" crates/` regenerates this list):
      nothing needed since ADBC/the shared task runner manages this now). One
      piece *is* portable: v1 issues `SET XACT_ABORT ON` on every connection, so
      a run-time error partway through a multi-statement batch rolls the batch
-     back instead of leaving it half-applied (`sqlserver_connections.py:401-434`).
+     back instead of leaving it half-applied
+     (`sqlserver_connections.py` `_apply_session_settings`).
    - **Datatype mappings**: string/timestamp/boolean/numeric — v1's
      `sqlserver_column.py` and v2's `Fabric` arms in `sql_types.rs` are both
      useful references; SQL Server and Fabric mostly share `datetime2`, `bit`,

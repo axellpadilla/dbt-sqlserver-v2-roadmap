@@ -38,8 +38,20 @@ sudo apt-get update
 # where the headers are a separate package. cmake isn't named by the guide —
 # it's here because -sys crates commonly shell out to it, and finding out
 # mid-build costs more than the download.
+#
+# protobuf-compiler is what dbt-state's build script shells out to; without it
+# `cargo check --workspace` stops at "Could not find `protoc`" and never
+# reaches the crates below it. libprotobuf-dev comes with it because the
+# Debian split puts the well-known types in that package — with protoc alone,
+# dbt-state's protos fail on `import "google/protobuf/duration.proto"`.
+#
+# dbt-core's release workflow downloads protoc 29.4 (release-v2.yml:203);
+# bookworm ships 3.21.12, which builds dbt-state's protos today. If a proto
+# starts using a newer feature, fetch 29.4 the way that workflow does rather
+# than widening this line.
 log "Build dependencies for dbt-core"
-apt_install build-essential pkg-config z3 libz3-dev cmake
+apt_install build-essential pkg-config z3 libz3-dev cmake \
+  protobuf-compiler libprotobuf-dev
 
 # rustup, rather than the devcontainer Rust feature: that feature adds its
 # components outside the branch that installs rustup (install.sh:362 vs :400),

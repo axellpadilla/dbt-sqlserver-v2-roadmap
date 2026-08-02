@@ -39,8 +39,8 @@ with `DBT_CORE_URL` / `DBT_CORE_BRANCH`, and pass
 ### Devcontainer
 
 `.devcontainer/` builds one container for both sides of the port: the Rust
-toolchain, `cargo-nextest`, `z3` and `pkg-config` for dbt-core, and Python,
-`uv`, the Microsoft ODBC driver and `sqlcmd` for dbt-sqlserver, with
+toolchain, `cargo-nextest`, `z3`, `pkg-config` and `protoc` for dbt-core, and
+Python, `uv`, the Microsoft ODBC driver and `sqlcmd` for dbt-sqlserver, with
 docker-in-docker so `make server` can start SQL Server on `:1433`.
 
 On creation it runs `make setup` (blobless), so both checkouts land inside the

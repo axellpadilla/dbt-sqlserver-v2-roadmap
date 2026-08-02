@@ -11,15 +11,41 @@ Checkbox legend: `[ ]` not started, `[~]` partially done already in this repo,
 
 ## 5.1 — Register the adapter type
 
-**Crate:** `dbt-adapter-core` — `crates/dbt-adapter-core/src/lib.rs`
+**Crates:** `dbt-adapter-core` — `crates/dbt-adapter-core/src/lib.rs`;
+`dbt-adapter-sql` — `src/ident.rs`, `src/statements.rs`
 
-- `[ ]` Add `SqlServer` to the `AdapterType` enum (next to `Fabric`, ~line 67).
+- `[ ]` Add `SqlServer` to the `AdapterType` enum (next to `Fabric`).
 - `[ ]` Add a `quote_char` arm: `SqlServer => '"'` (`05` #1), matching
   `Fabric`'s and v1's own rendering, with `SET QUOTED_IDENTIFIER ON` as
   connection-init SQL (§5.4). The arm isn't the whole decision — see the
   escaping check in §5.5.
-- `[ ]` Run `cargo build -p dbt-adapter-core` — expect it to fail elsewhere
-  first (this crate is small), but confirm this specific file compiles.
+- `[ ]` Update the three variant-enumerating tests in the same file:
+  `test_from_str`, `test_iter_with_names`, `test_quote_char_by_adapter`.
+  `test_iter_with_names` is what pins the strum rendering to `sqlserver`,
+  the name §5.6's macro package resolves from.
+- `[ ]` `dbt-adapter-sql` is the next crate the new variant breaks, before
+  `dbt-schemas`, so its three arms belong in this step — otherwise §5.3 and
+  §5.4 can't build their own crates:
+  - `ident.rs` `max_identifier_length` — `Some(128)`, SQL Server's
+    documented limit for a regular identifier (`sysname` is `nvarchar(128)`).
+    v1 enforces 127, but that constant is a copy of dbt-redshift's
+    `relation_configs/policies.py` (same filename, same constant, same value)
+    introduced with its `# Check for length of Redshift table/view names`
+    comment intact in `a204adb`, with no SQL Server rationale anywhere in v1's
+    history or tracker. Following the database means a 128-character relation
+    name errors in v1 and builds in v2. Measured on SQL Server 2022: 128
+    creates, 129 fails with `Msg 103 ... Maximum length is 128`, and the
+    adapter rejects 128 with its own error.
+    `../issues/v1-identifier-length-127-vs-128.md` carries the measurements
+    and proposes closing the split on the v1 side.
+  - `ident.rs` `is_valid_ident_char` — join `Fabric`'s group.
+  - `statements.rs` `is_update_statement` — join the `false` group.
+  - `ident.rs` `canonical_quote` needs nothing: its `_` arm already
+    yields `QuotingStyle::Double`. Name `SqlServer` alongside `Fabric` anyway
+    so the choice is visible rather than incidental.
+- `[ ]` Run `cargo build -p dbt-adapter-core -p dbt-adapter-sql`. Both should
+  be clean; the workspace then stops at one `E0004` in
+  `dbt-schemas/src/schemas/relations/base.rs`, which is §5.3's crate.
 
 ## 5.2 — ADBC driver registration
 
@@ -55,8 +81,14 @@ Checkbox legend: `[ ]` not started, `[~]` partially done already in this repo,
   the Entra `tenant_id`/`client_id`/`client_secret`) in `SqlServerDbConfig` —
   in scope for the initial PR (`05` #2). Leave out `trusted_connection`; that
   auth mode is deferred.
-- `[ ]` Uncomment and fix the `// SqlServer,` placeholder (line 46) →
-  `SqlServer(Box<SqlServerDbConfig>)`.
+- `[ ]` Uncomment and fix the `// SqlServer,` placeholder in the `DbConfig`
+  enum → `SqlServer(Box<SqlServerDbConfig>)`.
+- `[ ]` Add `SqlServer` to `render_with_run_filter` in
+  `crates/dbt-schemas/src/schemas/relations/base.rs`, joining the
+  `Postgres | Databricks | Redshift | Salesforce | Spark | DuckDB | Alt |
+  Fabric` group. This is the microbatch event-time filter predicate, unrelated
+  to `SqlServerDbConfig` but the one `E0004` this crate carries after §5.1,
+  so it lands here rather than blocking §5.4.
 - `[ ]` `cargo build -p dbt-schemas` and follow every resulting error — the
   compiler will point at every place that reads `DbConfig` and needs a new
   `SqlServer` case (per the guide's stated behavior for this step).
@@ -83,14 +115,15 @@ Checkbox legend: `[ ]` not started, `[~]` partially done already in this repo,
 
 - `[x]` `mod.rs` exists with `ActiveDirectoryServicePrincipal`,
   `ActiveDirectoryPassword`, `environment` auth flows, unit-tested.
-- `[x]` Dispatch wired in `src/lib.rs:93`.
+- `[x]` Dispatch wired in `src/lib.rs` `auth_for_backend`.
 - `[ ]` Add plain SQL authentication — native SQL Server login, username and
   password, no Entra/`fedauth` param (`05` #2). A new `SQLServerAuthIR` variant
   plus a `parse_auth` branch for `authentication: sql`; confirm the value name
   against `sqlserver_credentials.py`/`sqlserver_auth.py` rather than inventing
   one. Unlike the Entra variants it maps straight to the URI's userinfo
   (`user:password@host`), as v1's ADBC backend does
-  (`sqlserver_backend.py:386`). Add a unit test alongside the existing ones.
+  (`sqlserver_backend.py` `build_adbc_connection_uri`). Add a unit test
+  alongside the existing ones.
 - `[ ]` Leave Windows/trusted-connection auth out (`05` #2) — it only matters
   when dbt itself runs on a domain-joined Windows host. Keep the existing
   `unimplemented!()` stub for `ActiveDirectoryIntegrated` as-is; don't add a
@@ -100,12 +133,12 @@ Checkbox legend: `[ ]` not started, `[~]` partially done already in this repo,
   connection timeout, app name. Without the TLS settings, connections to
   on-prem instances with self-signed certificates fail validation.
 
-  Port these from `sqlserver_backend.py:367-401` (`build_adbc_connection_uri`)
-  rather than re-deriving them from the `go-mssqldb` docs — v1 builds the
+  Port these from `sqlserver_backend.py` `build_adbc_connection_uri` rather
+  than re-deriving them from the `go-mssqldb` docs — v1 builds the
   identical query string (`encrypt`, `TrustServerCertificate`,
   `connection timeout`) against the same driver
   ([PR #783](https://github.com/dbt-msft/dbt-sqlserver/pull/783)). Field
-  defaults are in `sqlserver_credentials.py:55-59`: `encrypt=True`,
+  defaults are on `SQLServerCredentials`: `encrypt=True`,
   `trust_cert=False`, `login_timeout=0` (omit the param when `<= 0`). Two more
   gaps visible in the same comparison: named-instance handling (host containing
   `\\`, port omitted) and URL-encoding of user/password, neither of which v2's
@@ -124,8 +157,8 @@ Checkbox legend: `[ ]` not started, `[~]` partially done already in this repo,
   Also evaluate `SET ANSI_NULLS ON` (its standard companion; indexed views and
   computed-column indexes need both) and `SET XACT_ABORT ON`, the one
   session-level `SET` v1 issues on connect
-  (`sqlserver_connections.py:401-434`), which makes a run-time error mid-batch
-  roll back instead of half-applying.
+  (`sqlserver_connections.py` `_apply_session_settings`), which makes a
+  run-time error mid-batch roll back instead of half-applying.
 
 ## 5.5 — Adapter layer (largest step)
 
@@ -139,64 +172,80 @@ others don't).
 
 ### Relation type & quoting — `src/relation/relation_impl.rs`
 
-- `[ ]` Add `SqlServer` to the `include_policy` match (~line 219) — start by
-  joining the existing `Databricks | Fabric | Postgres | Redshift | Salesforce
-  | Bigquery` shared-generic-relation-impl group unless the quoting decision
-  from 5.1 forces a separate arm.
+Every match in this file has a `_` arm, so none of the work below produces a
+compile error once 5.1 lands. The compiler enumerates `adapter_impl.rs`,
+`sql_types.rs` and the rest of 5.5; here it stays silent, and a missing arm
+shows up as wrong SQL rather than a build failure. Work the list rather than
+`cargo build` output.
+
+- `[ ]` Add `SqlServer` to `get_database`, joining the existing
+  `Databricks | Fabric | Postgres | Redshift | Salesforce | Bigquery` group.
+  That group raises `InvalidConfig` when `database` is unset; the `_` arm
+  returns an empty string, so without the arm a relation missing a database
+  renders as `.schema.table` instead of erroring.
+- `[ ]` Leave `include_policy` alone — its `_ => Policy::trues()`
+  is already correct for SQL Server's 3-part naming, and the explicit arms
+  there are all for adapters that drop a path part.
 - `[ ]` Check whether the shared rendering path **escapes an embedded delimiter**
   (`ab"cd` → `"ab""cd"`). If it interpolates verbatim, a SQL Server name
   containing a `"` breaks or injects, and v2 would reject names v1 accepts —
   v1 fixed exactly this in `SQLServerAdapter.quote()`/`SQLServerRelation.quoted()`
   (`05-open-questions-and-risks.md` #1). Decide whether to fix it in the shared
   impl (affects other adapters) or take a separate `SqlServer` arm.
-- `[ ]` Add `SqlServer` alongside `Fabric` at lines ~270/280/290 (the
-  db/schema/identifier string-formatting arms).
-- `[ ]` Add a `SqlServer` constructor mirroring line ~488
+- `[ ]` Add `SqlServer` alongside `Fabric` in `get_canonical_fqn`'s three
+  db/schema/identifier arms, which case-fold an unquoted path part.
+  `Fabric | Bigquery` pass it through verbatim; the `_` arm lowercases. SQL
+  Server preserves the case it was given, so it belongs with `Fabric`.
+- `[ ]` Add a `SqlServer` constructor mirroring `new_fabric`
   (`Self::new(AdapterType::Fabric, database, schema, identifier)`).
 
 ### Relation factory — `src/relation/factory.rs`
 
-- `[ ]` Add `SqlServer` to the `create_static_relation` match (~line 19,
-  alongside `Fabric`).
+- `[ ]` Add `SqlServer` to the `create_static_relation` match, alongside
+  `Fabric`.
 
 ### SQL type mapping — `src/sql_types.rs`
 
-- `[ ]` Add `SqlServer` arms wherever `Fabric` appears (lines ~183, 342, 353,
-  369, 383, 391, 401, 414, 546, 601, 638, 959, 970). Confirm each value against
+- `[ ]` Add `SqlServer` arms wherever `Fabric` appears — 16 mentions today,
+  so `rg '\bFabric\b' crates/dbt-adapter/src/sql_types.rs` is the work list.
+  Confirm each value against
   actual SQL Server T-SQL types, not assumed identical to Fabric — Fabric
   Warehouse has real T-SQL surface differences (e.g. Fabric disallows some
   legacy types, has different max VARCHAR/row-size limits than on-prem SQL
-  Server's 8060-byte page limit vs Fabric's stated 8000-byte VARCHAR limit at
-  line ~884 — verify against SQL Server's actual limits rather than copying).
+  Server's 8060-byte page limit vs the 8000-byte `FABRIC_MAX_VARCHAR_TYPE` in
+  `mod fabric` — verify against SQL Server's actual limits rather than
+  copying).
   **Match v1's current mappings, not its legacy ones**: as of 1.12.0
   `dbt_sqlserver_use_native_string_types` defaults `True`, so `STRING` →
   `VARCHAR(MAX)`, `NVARCHAR` → `NVARCHAR(4000)`, `NCHAR` → `NCHAR(1)`. The
   `VARCHAR(8000)`/`CHAR(1)` mappings still in `sqlserver_column.py`'s legacy
   table are deprecated in v1 and should not be ported.
 - `[x]` **Already answered** — the metadata type key lives in
-  `crates/dbt-adapter-sql/src/types/mod.rs:1816`, and v2 already defines
+  `crates/dbt-adapter-sql/src/types/mod.rs`, and v2 already defines
   `const SQLSERVER_KEYS: [&str; 2] = ["SQLSERVER:type", "type_text"]`, which
-  `AdapterType::Fabric` maps to at line 1831. Fabric reaches it because it
-  rides the same `adbc_driver_mssql`/`go-mssqldb` driver that emits
+  `AdapterType::Fabric` maps to in `metadata_type_candidate_keys`. Fabric
+  reaches it because it rides the same `adbc_driver_mssql`/`go-mssqldb`
+  driver that emits
   `SQLSERVER:type` in the Arrow field metadata. So the SqlServer arm is
   `AdapterType::SqlServer => &SQLSERVER_KEYS` — nothing to derive from your
   catalog queries, and note it's in `dbt-adapter-sql`, not `dbt-adapter`.
-- `[ ]` Reuse the two error arms for unsupported INTERVAL and ARRAY types
-  (~lines 920/929). SQL Server lacks both natively, so only the wording needs
-  adjusting.
+- `[ ]` Reuse the two error arms for unsupported INTERVAL and ARRAY types in
+  `mod fabric`'s `try_format_type`. SQL Server lacks both natively, so only
+  the wording needs adjusting.
 
 ### Column builder — `src/column/column_builder.rs`
 
-- `[ ]` Add `SqlServer` arm (~line 31). Try `Self::build_postgres_like(...)`
+- `[ ]` Add `SqlServer` arm to `ColumnBuilder::build`. Try
+  `Self::build_postgres_like(...)`
   first (per the guide's default recommendation for adapters without unusual
   type handling); if SQL Server-specific type quirks surface during smoke
   testing, add a dedicated `build_sqlserver` following the `build_fabric`
-  pattern (~lines 127–260) instead.
+  pattern instead.
 
 ### Catalog introspection — `src/metadata/get_relation.rs` + `src/metadata/sqlserver/mod.rs` (new)
 
-- `[ ]` Add `AdapterType::SqlServer => sqlserver_get_relation(...)` arm
-  (~line 76, alongside the existing `Fabric` arm).
+- `[ ]` Add an `AdapterType::SqlServer => sqlserver_get_relation(...)` arm to
+  `get_relation`, alongside the existing `Fabric` arm.
 - `[ ]` Create `src/metadata/sqlserver/mod.rs`, modeled on
   `src/metadata/fabric/mod.rs` (346 lines — full catalog introspection).
   Cross-check queries against v1's
@@ -211,13 +260,13 @@ others don't).
 of new `SqlServer` arms once the compiler enumerates them post-5.1. Known
 ones from the current `Fabric` arms to triage:
 
-- `[ ]` `valid_incremental_strategies` (~line 534): Fabric supports `&[Append,
+- `[ ]` `valid_incremental_strategies`: Fabric supports `&[Append,
   DeleteInsert, Merge, Microbatch]`. v1 SQL Server supports the same set per
   `dbt-sqlserver/.../incremental_strategies.sql` — **likely a direct copy**.
-- `[ ]` `list_schemas_inner` schema column name (~line 1105): Fabric uses
+- `[ ]` `list_schemas_inner` schema column name: Fabric uses
   `"schema"` — verify SQL Server's `INFORMATION_SCHEMA.SCHEMATA` column naming
   matches (it should, since both use SQL Server's information schema).
-- `[ ]` `get_adbc_execute_options` (~line 4873): check what Fabric sets here
+- `[ ]` `get_adbc_execute_options`: check what Fabric sets here
   (execution options passed to ADBC) and whether SQL Server needs the same or
   different options.
 - `[ ]` `get_constraint_support`, `alter_table_add_columns`, `is_replaceable`,

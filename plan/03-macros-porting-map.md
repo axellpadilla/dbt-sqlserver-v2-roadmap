@@ -107,7 +107,7 @@ deprecations; it does not touch macro bodies.
 | `materializations/functions/scalar.sql` | **Skip — deferred**, same as above |
 | `materializations/hooks.sql` | Port — pre/post-hook handling, likely thin |
 | `materializations/models/incremental/incremental.sql` | Port — core incremental materialization control flow; diff carefully against v2's shared/default incremental macro to avoid duplicating logic the v2 task runner already provides |
-| `materializations/models/incremental/incremental_strategies.sql` | Port — maps to the `valid_incremental_strategies` Rust arm (`adapter_impl.rs:534`); Fabric supports `Append, DeleteInsert, Merge, Microbatch` and v1 SQL Server matches this set |
+| `materializations/models/incremental/incremental_strategies.sql` | Port — maps to the `valid_incremental_strategies` Rust arm (`adapter_impl.rs`); Fabric supports `Append, DeleteInsert, Merge, Microbatch` and v1 SQL Server matches this set |
 | `materializations/models/incremental/merge.sql` | Port — `get_merge_sql`, `get_delete_insert_merge_sql`, `get_insert_overwrite_merge_sql`; note `get_query_options(parse_options=True)` calls — verify this helper still exists/means the same thing in v2 |
 | `materializations/models/table/columns_spec_ddl.sql` | Port — explicit column DDL generation for `contract` enforcement |
 | `materializations/models/table/table_dml_refresh.sql` | **Skip — deferred** (`05-open-questions-and-risks.md` #4). Only needed for the `full_refresh_build: prebuilt` optimization path, which is out of scope for the initial PR |

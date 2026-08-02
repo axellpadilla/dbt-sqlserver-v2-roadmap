@@ -4,8 +4,11 @@ Audited against local checkouts:
 - `dbt-core/` @ commit `f4c63ccca244a2f28456deaef2d91ee539c99d3a` (branch `main`)
 - `dbt-sqlserver/` @ commit `1f3332c` (branch `master`, v1.12.0rc2)
 
-Every file:line below was checked against those checkouts. When they move, the
-fix is re-auditing and bumping the hashes, not loosening the references.
+Every file and symbol below was checked against those checkouts. When they
+move, the fix is re-auditing and bumping the hashes, not loosening the
+references. References name the function, constant or variant rather than a
+line number, so a grep re-verifies them and an edit upstream doesn't silently
+invalidate them — see `../AGENTS.md`.
 
 ### v1 behavior this plan depends on
 
@@ -15,8 +18,8 @@ fix is re-auditing and bumping the hashes, not loosening the references.
   closing #785 and #409). v1 and v2 agree here, so macro bodies port without a
   quoting rewrite — see `03-macros-porting-map.md` and `05` #1.
 - **`SET XACT_ABORT ON` is issued on every connection**
-  (`sqlserver_connections.py:401-434`) — the only session-level `SET` v1 sets,
-  and input for the init SQL in Step 5.4.
+  (`sqlserver_connections.py` `_apply_session_settings`) — the only
+  session-level `SET` v1 sets, and input for the init SQL in Step 5.4.
 - **Native string types are the default** as of 1.12.0
   (`dbt_sqlserver_use_native_string_types`): `STRING` → `VARCHAR(MAX)`,
   `NVARCHAR` → `NVARCHAR(4000)`, `NCHAR` → `NCHAR(1)`. The legacy
@@ -54,16 +57,18 @@ Preview and Spark/DuckDB are Beta.
 
 **Already implemented.** `Backend::SQLServer` exists end-to-end:
 
-- `driver.rs:78` — `Backend` enum variant `SQLServer`
-- `driver.rs:113` — `Backend::SQLServer => write!(f, "SQL Server")`
-- `driver.rs:134` — ADBC library name: `Backend::SQLServer => Some("adbc_driver_mssql")`
-- `driver.rs:380`, `437` — included in the CDN-distributed backend list alongside
-  Snowflake, BigQuery, ClickHouse, Postgres, Databricks, Redshift, DuckDB,
-  DuckDB Extended, Salesforce, Spark
-- `install.rs:26,317,733,769,889` — CDN download URL/version (`mssql` /
-  `MSSQLSERVER_DRIVER_VERSION`), including a macOS x86_64 special case shared
-  with ClickHouse (`install.rs:889`)
-- `repl.rs:32` — `"sqlserver" | "mssql" => Ok(Backend::SQLServer)` (adbc REPL alias)
+- `driver.rs` — `Backend` enum variant `SQLServer`, its `Display` impl
+  (`write!(f, "SQL Server")`), and `adbc_library_name`
+  (`Some("adbc_driver_mssql")`)
+- `driver.rs` `try_load_driver_internal` — included in the CDN-distributed
+  backend list alongside Snowflake, BigQuery, ClickHouse, Postgres,
+  Databricks, Redshift, DuckDB, DuckDB Extended, Salesforce, Spark
+- `install.rs` — listed in `INSTALLABLE_DRIVERS`, with the CDN download
+  URL/version in `backend_name_and_version` (`mssql` /
+  `MSSQLSERVER_DRIVER_VERSION`) and a macOS x86_64 special case shared with
+  ClickHouse
+- `repl.rs` `parse_backend` — `"sqlserver" | "mssql" => Ok(Backend::SQLServer)`
+  (adbc REPL alias)
 
 Nothing to do here unless the driver needs connection parameters it doesn't yet
 expose (the `apply_connection_args` gap in §3).
@@ -88,10 +93,10 @@ one. v1's `adbc` backend
   → `fedauth=ActiveDirectoryEnvironment`
 - Connection URI: `sqlserver://{host}:{port}?database={database}`, default port
   `1433` (`DEFAULT_PORT` const)
-- Dispatch wired: `crates/dbt-auth/src/lib.rs:93` —
+- Dispatch wired: `crates/dbt-auth/src/lib.rs` `auth_for_backend` —
   `Backend::SQLServer => Box::new(sqlserver::SQLServerAuth {})`
 
-**Explicitly stubbed as `unimplemented!()`** (line ~139):
+**Explicitly stubbed as `unimplemented!()`** in `parse_auth`:
 `ActiveDirectoryInteractive`, `ActiveDirectoryIntegrated`, `CLI`, `auto`.
 
 **Gaps relative to v1** (`sqlserver_credentials.py`, `sqlserver_auth.py`): v1
@@ -108,8 +113,9 @@ params (https://github.com/microsoft/go-mssqldb#connection-parameters-and-dsn).
 (`encrypt=disable` / `TrustServerCertificate` equivalent).
 
 **These are not open design questions — v1's new ADBC backend already solved
-them against the same driver.** `dbt-sqlserver/dbt/adapters/sqlserver/sqlserver_backend.py:367-401`
-(`build_adbc_connection_uri`) builds exactly this query string:
+them against the same driver.**
+`dbt-sqlserver/dbt/adapters/sqlserver/sqlserver_backend.py`
+`build_adbc_connection_uri` builds exactly this query string:
 
 ```python
 query_parts = [
@@ -121,7 +127,7 @@ if credentials.login_timeout and credentials.login_timeout > 0:
     query_parts.append(f"connection timeout={credentials.login_timeout}")
 ```
 
-with defaults from `sqlserver_credentials.py:55-59`:
+with defaults from `SQLServerCredentials`:
 `encrypt: Optional[bool] = True`, `trust_cert: Optional[bool] = False`,
 `login_timeout: Optional[int] = 0` (0 = driver default, no explicit param
 appended). It also URL-encodes user/password (`urllib.parse.quote(..., safe='')`)
@@ -139,7 +145,7 @@ a working, merged reference for the exact same driver.
 pub enum DbConfig {
     Redshift(...), Snowflake(...), Postgres(...), Bigquery(...), Trino(...),
     Datafusion(...),
-    // SqlServer,          <-- line 46, commented placeholder only
+    // SqlServer,          <-- commented placeholder only
     // SingleStore,
     Spark(...), Databricks(...), Salesforce(...), DuckDB(...), Alt(...),
     Exasol(...),
@@ -166,17 +172,17 @@ a `SqlServer` arm added alongside:
 
 | File | Fabric arm(s) | What it controls |
 |---|---|---|
-| `src/relation/relation_impl.rs:219,270,280,290,488` | `get_database` (database-required list), the db/schema/identifier string-formatting arms, and the static constructor. Note `include_policy` (line 37) needs nothing: Fabric falls through to `Policy::trues()`, which is already 3-part | relation rendering and construction |
-| `src/relation/factory.rs:19` | included in `create_static_relation` match | wires `AdapterType` to `RelationStatic` |
-| `src/sql_types.rs:183,342,353,369,383,391,401,414,546,601,638,884,920,929,959,970` | type-name mapping (`real`, `float`, `bit`, `datetime2(6)`, `time(6)`, `varchar`), metadata key, row-size limits (VARCHAR ≤ 8000 bytes), explicit "INTERVAL/ARRAY not supported" errors | Arrow↔SQL type mapping, per-warehouse type quirks |
-| `src/column/column_builder.rs:31,127-128,237-260` | `Fabric => Ok(Self::build_fabric(field, type_ops))`, dedicated `build_fabric` fn | Arrow record batch → dbt `Column` object |
-| `src/metadata/get_relation.rs:76` | `AdapterType::Fabric => fabric_get_relation(...)` | single-relation catalog lookup |
+| `src/relation/relation_impl.rs` | `get_database` (database-required list), `get_canonical_fqn`'s three db/schema/identifier arms, and the `new_fabric` static constructor. Note `include_policy` needs nothing: Fabric falls through to `Policy::trues()`, which is already 3-part | relation rendering and construction |
+| `src/relation/factory.rs` | included in `create_static_relation` match | wires `AdapterType` to `RelationStatic` |
+| `src/sql_types.rs` (16 `Fabric` mentions) | type-name mapping (`real`, `float`, `bit`, `datetime2(6)`, `time(6)`, `varchar`), metadata key, row-size limits (VARCHAR ≤ 8000 bytes), explicit "INTERVAL/ARRAY not supported" errors | Arrow↔SQL type mapping, per-warehouse type quirks |
+| `src/column/column_builder.rs` | `Fabric => Ok(Self::build_fabric(field, type_ops))` in `ColumnBuilder::build`, plus the dedicated `build_fabric` fn | Arrow record batch → dbt `Column` object |
+| `src/metadata/get_relation.rs` | `AdapterType::Fabric => fabric_get_relation(...)` | single-relation catalog lookup |
 | `src/metadata/fabric/mod.rs` | 346-line module: full catalog introspection (`INFORMATION_SCHEMA`/`sys.*` queries) | model for `metadata/sqlserver/mod.rs` |
 | `src/adapter/adapter_impl.rs` | 44 occurrences across ~15 functions (`list_schemas`, `valid_incremental_strategies`, `get_adbc_execute_options`, `alter_table_add_columns`, `is_replaceable`, `truncate_relation`, `get_constraint_support`, grants/masking helpers, etc.) | most of the exhaustive per-warehouse behavior surface |
 
-`valid_incremental_strategies` for Fabric (`adapter_impl.rs:534`) is
+`valid_incremental_strategies` for Fabric (`adapter_impl.rs`) is
 `&[Append, DeleteInsert, Merge, Microbatch]`, and v1's
-`SQLServerAdapter.valid_incremental_strategies` (`sqlserver_adapter.py:311-315`)
+`SQLServerAdapter.valid_incremental_strategies` (`sqlserver_adapter.py`)
 returns `["append", "delete+insert", "merge", "microbatch"]` — the same set, so
 the arm is a direct copy.
 
@@ -200,7 +206,7 @@ How it works (`crates/dbt-loader/src/load_packages.rs`):
 
 - `#[derive(RustEmbed)] #[folder = "src/dbt_macro_assets/"]` compiles the whole
   directory into the `dbt` binary; packages are synced to disk and loaded per run.
-- `internal_package_names()` (line ~261) selects the package **by name alone**:
+- `internal_package_names()` selects the package **by name alone**:
   `format!("dbt-{adapter_type}")` plus the shared `dbt-adapters`. So
   `AdapterType::SqlServer` automatically looks for `dbt-sqlserver/` — no
   registration list to edit, just the directory and a `dbt_project.yml`
@@ -245,7 +251,7 @@ dbt/adapters/sqlserver/
                                Note the 1.12 default flip to native string types (VARCHAR(MAX)/NVARCHAR(4000)).
   sqlserver_configs.py       — incremental/materialization config (source for adapter_impl.rs arms)
   sqlserver_connections.py   — connection mgmt (NOT needed — ADBC driver replaces this entirely).
-                               Exception: the session `SET XACT_ABORT ON` it issues on connect (lines 401-434),
+                               Exception: the session `SET XACT_ABORT ON` it issues on connect
                                which is init-SQL input for Step 5.4.
   sqlserver_constants.py
   sqlserver_credentials.py   — profile fields (source for SqlServerDbConfig struct)

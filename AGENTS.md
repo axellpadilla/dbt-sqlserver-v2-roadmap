@@ -17,27 +17,29 @@ integration branch, with `dbt-labs/dbt-core` as the `upstream` remote, so a
 checkout is on the branch the port lands on rather than on upstream `main`.
 
 `.devcontainer/` provides both toolchains in one container — Rust plus
-`cargo-nextest`, `z3` and `pkg-config` for dbt-core; Python, `uv` and the
-Microsoft ODBC driver for dbt-sqlserver; docker-in-docker for `make server` —
-and runs `make setup` on creation, so both checkouts are in the workspace.
+`cargo-nextest`, `z3`, `pkg-config` and `protoc` for dbt-core; Python, `uv`
+and the Microsoft ODBC driver for dbt-sqlserver; docker-in-docker for
+`make server` — and runs `make setup` on creation, so both checkouts are in
+the workspace.
 
 That framing drives everything below: **the main failure mode here is not a bug,
 it's a confident sentence that stopped being true.**
 
 ## Verify against a checkout, not against memory or a loose grep
 
-Every file:line reference in `plan/` was checked against a real checkout. Keep
-it that way.
+Every claim in `plan/` was checked against a real checkout. Keep it that way.
 
 - **List directories, don't infer them from grep.** `00-current-state.md` §6
   once claimed the `dbt-fabric` macro package held 2 files, from a
   non-exhaustive grep. It holds 42, and the wrong number had propagated into a
   porting strategy that told people to rewrite macros the upstream project
   actually vendors verbatim. `find <dir> -type f` before characterizing a tree.
-- **Re-check line numbers before citing them.** `include_policy` is at
-  `relation_impl.rs:37`, not the 219 an earlier pass cited — 219 is
-  `get_database`, a different match with different consequences. A plausible
-  line number is not a checked one.
+- **Name the symbol, not the line.** `plan/02` once sent people to
+  `relation_impl.rs` line 219 for `include_policy`; by the time anyone
+  followed it, 219 was `get_database` — a different match, with different
+  consequences. Cite `relation_impl.rs` `include_policy` instead. A function,
+  constant or enum variant survives edits above it; a line number doesn't, and
+  a stale one is worse than none because it still looks checked.
 - **Read the code that implements the thing, not just the thing that names it.**
   `adapter.parse_index` exists and is dispatched from Jinja, which reads like
   working support; the implementation it resolves to is `unimplemented!()` for
@@ -121,8 +123,10 @@ produced them.
 - **State what is true now.** No "this section previously said", no "updated
   2026-08-02", no "no longer a divergence". Git holds the history; the document
   holds the current state.
-- **Cite file:line** for claims about either codebase, so the next person can
-  re-verify rather than re-derive.
+- **Cite the file and the symbol** for claims about either codebase — a
+  function, constant, enum variant or macro name — so the next person can
+  re-verify with a grep rather than re-derive. Not line numbers: they go stale
+  silently on the next upstream edit, and both checkouts move.
 - **Keep the audit hashes in `00-current-state.md` honest.** If you re-verify
   against a newer commit, bump them. If you didn't verify, don't.
 - Don't hedge what you checked, and don't assert what you didn't.

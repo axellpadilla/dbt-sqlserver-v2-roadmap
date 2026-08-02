@@ -62,11 +62,11 @@ is **already partially wired up** in dbt-core v2:
 
 | Piece | Status | Evidence |
 |---|---|---|
-| ADBC driver registration (`Backend::SQLServer`) | ✅ Done, CDN-distributed | `crates/dbt-adbc/src/driver.rs:78`, `crates/dbt-adbc/src/install.rs` |
+| ADBC driver registration (`Backend::SQLServer`) | ✅ Done, CDN-distributed | `crates/dbt-adbc/src/driver.rs`, `crates/dbt-adbc/src/install.rs` |
 | Auth module (`crates/dbt-auth/src/sqlserver/mod.rs`) | ✅ Mostly done (337 lines, tested) | Service principal, AD password, environment auth implemented; interactive/CLI/integrated auth stubbed as `unimplemented!()`; connection-param gaps (`encrypt`, `TrustServerCertificate`, `connection timeout`) have a direct, working reference to port from — v1's PR #783 (same driver) |
-| Auth dispatch wiring | ✅ Done | `crates/dbt-auth/src/lib.rs:93` (`Backend::SQLServer => sqlserver::SQLServerAuth`) |
+| Auth dispatch wiring | ✅ Done | `crates/dbt-auth/src/lib.rs` `auth_for_backend` (`Backend::SQLServer => sqlserver::SQLServerAuth`) |
 | `AdapterType::SqlServer` enum variant | ❌ Missing | Not present in `crates/dbt-adapter-core/src/lib.rs` (only `Fabric` exists) |
-| `DbConfig::SqlServer` profile struct | ❌ Missing (commented placeholder only) | `crates/dbt-schemas/src/schemas/profiles.rs:46` — `// SqlServer,` |
+| `DbConfig::SqlServer` profile struct | ❌ Missing (commented placeholder only) | `crates/dbt-schemas/src/schemas/profiles.rs` — `// SqlServer,` in the `DbConfig` enum |
 | Adapter layer match arms (relations, catalog, columns, SQL types) | ❌ Missing | `crates/dbt-adapter/src/**` has `Fabric` arms only |
 | Jinja macros (`dbt_macro_assets/dbt-sqlserver/`) | ❌ Missing | Only `dbt-fabric/` and `dbt-fabricspark/` exist |
 | `dbt init` interactive profile setup | ❌ Missing (optional) | `crates/dbt-init/src/adapter_config/fabric_config.rs` is the pattern to copy |
