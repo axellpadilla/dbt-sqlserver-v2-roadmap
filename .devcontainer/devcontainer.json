@@ -41,7 +41,15 @@
     "DBT_TEST_USER_2": "DBT_TEST_USER_2",
     "DBT_TEST_USER_3": "DBT_TEST_USER_3",
     "RUST_BACKTRACE": "1",
-    "CARGO_TERM_COLOR": "always",
+    "CARGO_TERM_COLOR": "always"
+  },
+
+  // PATH goes here, not in containerEnv: ${containerEnv:...} only resolves in
+  // remoteEnv. In containerEnv it is passed through verbatim, which drops
+  // /usr/bin and /bin from PATH and kills the container at startup — the init
+  // script fails with "cat: not found" before anything else runs.
+  // setup.sh appends the same entry to .bashrc for shells outside VS Code.
+  "remoteEnv": {
     "PATH": "/home/vscode/.cargo/bin:${containerEnv:PATH}"
   },
 
