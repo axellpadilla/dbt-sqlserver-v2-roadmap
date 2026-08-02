@@ -324,15 +324,45 @@ shows up as wrong SQL rather than a build failure. Work the list rather than
 
 ### Catalog introspection — `src/metadata/get_relation.rs` + `src/metadata/sqlserver/mod.rs` (new)
 
-- `[ ]` Add an `AdapterType::SqlServer => sqlserver_get_relation(...)` arm to
+- `[x]` Add an `AdapterType::SqlServer => sqlserver_get_relation(...)` arm to
   `get_relation`, alongside the existing `Fabric` arm.
-- `[ ]` Create `src/metadata/sqlserver/mod.rs`, modeled on
-  `src/metadata/fabric/mod.rs` (346 lines — full catalog introspection).
-  Cross-check queries against v1's
-  `dbt-sqlserver/dbt/include/sqlserver/macros/adapters/catalog.sql` and
-  `metadata.sql` for anything Fabric's catalog module doesn't need but classic
-  SQL Server does (e.g. index metadata via `sys.indexes`/`sys.index_columns`,
-  used by v1's `indexes.sql` and `relation_configs/`).
+- `[x]` Create `src/metadata/sqlserver/mod.rs`, modeled on
+  `src/metadata/fabric/mod.rs` — but **not** driving `sp_tables`/`sp_columns`
+  the way Fabric's does. Measured against SQL Server 2022 (16.0.4265.3):
+  - A `@table_qualifier` other than the connection's current database is
+    error 15250, "The database name component of the object qualifier must be
+    the name of the current database". Fabric never meets this because a
+    warehouse *is* the database; on SQL Server, cross-database references are
+    ordinary, and v1 supports them by emitting `USE [db];` first.
+  - `@table_name` is a `LIKE` pattern unless `@fUsePattern = 0` is passed, so
+    `probe_table` also returns `probeXtable`. `\_` does not escape it. In
+    `get_relation` the extra row fails the one-row check; in `sp_columns` it
+    merges a second table's columns into the schema. dbt model names are
+    snake_case, so this is not an edge case.
+
+  Both defects apply to `metadata/fabric/mod.rs` as it stands. The port uses
+  three-part `sys.objects`/`sys.schemas`/`sys.columns`/`sys.types` instead,
+  which resolves cross-database and — unlike v1's `USE` — leaves the
+  connection's current database untouched.
+- `[x]` Type text: `sp_columns.TYPE_NAME` is the bare name, so `decimal(18,4)`
+  arrives as `decimal`. `compose_type_text` rebuilds it from
+  `max_length`/`precision`/`scale` following v1's
+  `sqlserver__get_columns_in_relation`, including halving `max_length` for the
+  national types (`sys.columns` reports bytes) and leaving `datetime` bare,
+  which reports a scale but rejects one.
+- `[x]` The catalog `build_*` functions read `table_comment` and
+  `column_comment` (Postgres does, Fabric does not). v1's `get_catalog`
+  returns both and v1 supports `persist_docs`; this fixes the column contract
+  §5.6's catalog macro has to satisfy.
+- `[ ]` `freshness_inner` and `list_relations_schemas_by_patterns_inner` are
+  `todo!()`, matching both Fabric and Postgres. v1 has
+  `sqlserver__get_relation_last_modified` to port for the first.
+- `[ ]` Index metadata via `sys.indexes`/`sys.index_columns`, used by v1's
+  `indexes.sql` and `relation_configs/`. Not part of the `MetadataAdapter`
+  trait, so it has no home in this module yet — revisit with the
+  materializations.
+- Two arms in `adapter_impl.rs` (`metadata_adapter`, `list_relations`) landed
+  here rather than below: they are what makes the module reachable.
 
 ### Adapter behavior match arms — `src/adapter/adapter_impl.rs`
 

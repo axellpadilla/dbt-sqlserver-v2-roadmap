@@ -166,6 +166,16 @@ rather than per-file. All five are locked; raise them with dbt Labs in
   `metadata/fabric/mod.rs` against a real SQL Server instance before reusing
   it, not against Fabric's behavior.
 
+  **Done in Part 5, and it paid off twice.** Fabric's module drives
+  `sp_tables`/`sp_columns`; on SQL Server 2022 those read only the
+  connection's current database (error 15250 for any other
+  `@table_qualifier`), and `@table_name` is a `LIKE` pattern unless
+  `@fUsePattern = 0` is passed, so `stg_orders` also matches `stgXorders`.
+  The pattern half is a live defect in Fabric's own code — drafted as
+  `issues/v2-fabric-sp-tables-like-pattern.md`, unfiled. The port uses
+  three-part catalog-view queries instead. `sp_columns` also drops
+  precision, scale and length from `TYPE_NAME`, which `sys.columns` carries.
+
 - **Nothing in dbt-core knows what a collation is.** Every case decision in the
   Rust is a per-`AdapterType` constant, and SQL Server is the only supported
   adapter whose case behavior is configurable per database, per column and per
@@ -186,10 +196,14 @@ rather than per-file. All five are locked; raise them with dbt Labs in
   - `dbt-df-providers` `seed_io.rs` `infer_seed_column_name_strategy` — see the
     census below; `Verbatim` is the arm that matches how SQL Server stores an
     unquoted column name, and `Lowercase` would silently rename seed headers.
-  - Catalog introspection (Part 5) compares names as strings. v1 forces the
-    issue in `columns.sql` with `c.name collate database_default as
-    column_name`; the ported queries need the same or an explicit reason not
-    to.
+  - Catalog introspection (Part 5) compares names as strings. `column_name`
+    and `data_type` carry `collate database_default`, following v1's
+    `columns.sql`. The `where` predicates do not: `s.name = '...'` and
+    `o.name = '...'` resolve under the database collation, so on a `_CS_`
+    server a lookup of `stg_orders` will not find `STG_Orders`. That matches
+    what the server itself does with an unquoted name, and matches v1, which
+    compares the same way — but it is a decision, not an accident, and it
+    needs a test on a case-sensitive server.
 
 - **Identifiers built inside string literals fail silently.**
   `OBJECT_ID('schema.table')`, `sp_rename`, and catalog predicates comparing
